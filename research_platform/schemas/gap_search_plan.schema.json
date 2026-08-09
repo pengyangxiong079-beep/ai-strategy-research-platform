@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "round", "only_missing_data", "queries", "existing_query_count", "stop_if_access_blocked"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "round": {"type": "integer", "minimum": 1, "maximum": 3},
+    "only_missing_data": {"const": true},
+    "queries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["query_id", "gap_id", "dataset_id", "priority", "query_text", "language", "domain_filter", "entity", "geography", "period", "metric", "missing_field", "gap_reason"],
+        "properties": {
+          "query_id": {"type": "string", "minLength": 1},
+          "gap_id": {"type": "string"},
+          "dataset_id": {"type": "string", "minLength": 1},
+          "priority": {"enum": ["CRITICAL", "IMPORTANT", "OPTIONAL"]},
+          "query_text": {"type": "string", "minLength": 1},
+          "language": {"type": "string"},
+          "domain_filter": {"type": "string"},
+          "entity": {"type": "string"},
+          "geography": {"type": "string"},
+          "period": {"type": "string"},
+          "metric": {"type": "string"},
+          "missing_field": {"type": "string"},
+          "gap_reason": {"type": "string"}
+        }
+      }
+    },
+    "existing_query_count": {"type": "integer", "minimum": 0},
+    "stop_if_access_blocked": {"type": "boolean"}
+  }
+}

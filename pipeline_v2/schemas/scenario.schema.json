@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "scenario": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["scenario_id", "label", "base_period", "end_period", "value_type", "starting_value", "annual_points", "assumptions", "formula", "target_value", "target_gap", "trigger_conditions", "risks", "source_fact_ids", "source_observation_ids", "confidence"],
+      "properties": {
+        "scenario_id": {"type": "string", "minLength": 1},
+        "label": {"type": "string", "minLength": 1},
+        "base_period": {"type": "string"},
+        "end_period": {"type": "string"},
+        "value_type": {"const": "MODELLED"},
+        "starting_value": {"type": ["number", "null"]},
+        "annual_points": {"type": "array"},
+        "assumptions": {"type": "array"},
+        "formula": {"type": "string"},
+        "target_value": {"type": ["number", "null"]},
+        "target_gap": {"type": ["number", "null"]},
+        "trigger_conditions": {"type": "array"},
+        "risks": {"type": "array"},
+        "source_fact_ids": {"type": "array"},
+        "source_observation_ids": {"type": "array"},
+        "confidence": {"type": ["string", "number", "null"]}
+      }
+    }
+  }
+}

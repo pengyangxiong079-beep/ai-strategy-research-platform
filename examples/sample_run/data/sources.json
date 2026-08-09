@@ -1,0 +1,14 @@
+{
+  "schema_version": "2.0",
+  "sources": [
+    {
+      "source_id": "SRC_FIXTURE_001",
+      "title": "Synthetic fixture source",
+      "publisher": "Example Publisher",
+      "url": "https://example.invalid/fixture",
+      "source_grade": "GRADE_A",
+      "access_status": "SYNTHETIC_FIXTURE",
+      "is_test_fixture": true
+    }
+  ]
+}

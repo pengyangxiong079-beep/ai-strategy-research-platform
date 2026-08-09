@@ -1,0 +1,13 @@
+{
+  "template_id": "general",
+  "components": [
+    {"component_id": "kpi_summary", "renderer": "kpi_summary", "page": "Overview", "title": "KPI摘要"},
+    {"component_id": "time_trend", "renderer": "time_trend", "page": "Market", "title": "时间趋势"},
+    {"component_id": "market_composition", "renderer": "market_composition", "page": "Market", "title": "市场构成"},
+    {"component_id": "competitor_comparison", "renderer": "competitor_comparison", "page": "Competition", "title": "竞品对比"},
+    {"component_id": "risk_opportunity", "renderer": "risk_opportunity", "page": "Risk & Opportunity", "title": "风险与机会"},
+    {"component_id": "strategy_roadmap", "renderer": "strategy_roadmap", "page": "Strategy Roadmap", "title": "战略路线图"},
+    {"component_id": "evidence_quality", "renderer": "evidence_quality", "page": "Evidence Quality", "title": "证据质量"},
+    {"component_id": "data_gaps", "renderer": "data_gaps", "page": "Evidence Quality", "title": "数据不足"}
+  ]
+}

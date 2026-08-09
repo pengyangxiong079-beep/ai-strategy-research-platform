@@ -1,0 +1,15 @@
+{
+  "template_id": "automotive",
+  "components": [
+    {"component_id": "kpi_summary", "renderer": "kpi_summary", "page": "Overview", "title": "KPI摘要"},
+    {"component_id": "bev_registration_trend", "renderer": "time_trend", "page": "Market", "title": "BEV注册趋势"},
+    {"component_id": "powertrain_mix", "renderer": "market_composition", "page": "Market", "title": "动力类型构成"},
+    {"component_id": "model_price_comparison", "renderer": "competitor_comparison", "page": "Competition", "title": "车型价格比较"},
+    {"component_id": "channel_coverage", "renderer": "competitor_comparison", "page": "Competition", "title": "渠道覆盖"},
+    {"component_id": "charging_infrastructure", "renderer": "kpi_summary", "page": "Market", "title": "充电基础设施"},
+    {"component_id": "risk_opportunity", "renderer": "risk_opportunity", "page": "Risk & Opportunity", "title": "风险与机会"},
+    {"component_id": "market_entry_roadmap", "renderer": "strategy_roadmap", "page": "Strategy Roadmap", "title": "市场进入路线图"},
+    {"component_id": "evidence_quality", "renderer": "evidence_quality", "page": "Evidence Quality", "title": "证据质量"},
+    {"component_id": "data_gaps", "renderer": "data_gaps", "page": "Evidence Quality", "title": "数据不足"}
+  ]
+}

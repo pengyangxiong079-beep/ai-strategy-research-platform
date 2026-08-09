@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dashboard_data.schema.json",
+  "title": "Strategy Dashboard Data",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version", "meta", "executive_summary", "metrics", "time_series",
+    "comparisons", "matrices", "segments", "geographies", "risks",
+    "opportunities", "strategic_options", "recommendations", "initiatives",
+    "scenarios", "evidence", "quality", "revision", "dashboard_status"
+  ],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "dashboard_status": {"enum": ["READY", "READY_WITH_GAPS", "BLOCKED_BY_QUALITY", "UNAVAILABLE"]},
+    "meta": {
+      "type": "object",
+      "required": ["analysis_type", "topic", "run_id", "is_demo"],
+      "properties": {
+        "analysis_type": {"enum": ["COMPETITOR_ANALYSIS", "MARKET_ENTRY", "INDUSTRY_ANALYSIS", "COMPANY_STRATEGY", "PRODUCT_STRATEGY", "GROWTH_STRATEGY", "BUSINESS_MODEL", "INVESTMENT_MA", "GENERIC_STRATEGY"]},
+        "topic": {"type": "string"},
+        "run_id": {"type": "string"},
+        "is_demo": {"type": "boolean"}
+      }
+    },
+    "executive_summary": {"type": "object"},
+    "metrics": {"type": "array", "items": {"$ref": "#/$defs/metric"}},
+    "time_series": {"type": "array"},
+    "comparisons": {"type": "array", "items": {"$ref": "#/$defs/comparison"}},
+    "matrices": {"type": "array"},
+    "segments": {"type": "array"},
+    "geographies": {"type": "array"},
+    "risks": {"type": "array"},
+    "opportunities": {"type": "array"},
+    "strategic_options": {"type": "array"},
+    "recommendations": {"type": "array"},
+    "initiatives": {"type": "array"},
+    "scenarios": {"type": "array", "items": {"$ref": "#/$defs/scenario"}},
+    "evidence": {"type": "array"},
+    "quality": {"type": "object"},
+    "revision": {"type": "object"},
+    "report_data": {"type": ["object", "null"]}
+  },
+  "$defs": {
+    "metric": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["metric_id", "label", "value", "unit", "currency", "geography", "period", "metric_definition", "value_type", "verification_status", "temporal_status", "source_fact_ids", "source_grade", "confidence", "comparability_group"],
+      "properties": {
+        "metric_id": {"type": "string", "minLength": 1},
+        "label": {"type": "string", "minLength": 1},
+        "value": {"type": ["number", "null"]},
+        "unit": {"type": ["string", "null"]},
+        "currency": {"type": ["string", "null"]},
+        "geography": {"type": ["string", "null"]},
+        "period": {"type": ["string", "null"]},
+        "metric_definition": {"type": "string"},
+        "value_type": {"enum": ["ACTUAL", "HISTORICAL", "ESTIMATE", "FORECAST", "SCENARIO", "TARGET", "PROXY", "UNKNOWN"]},
+        "verification_status": {"enum": ["SUPPORTED", "PARTIAL", "UNSUPPORTED", "NOT_CHECKED"]},
+        "temporal_status": {"enum": ["CURRENT", "HISTORICAL", "FUTURE_PLAN", "SUPERSEDED", "UNKNOWN"]},
+        "source_fact_ids": {"type": "array", "items": {"type": "string"}},
+        "source_observation_ids": {"type": "array", "items": {"type": "string"}},
+        "source_grade": {"type": "string"},
+        "confidence": {"type": ["string", "number", "null"]},
+        "comparability_group": {"type": "string"}
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["scenario_id", "label", "base_period", "end_period", "value_type", "starting_value", "annual_points", "assumptions", "formula", "target_value", "target_gap", "trigger_conditions", "risks", "source_fact_ids", "source_observation_ids", "confidence"],
+      "properties": {"value_type": {"const": "MODELLED"}}
+    },
+    "comparison": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["comparison_id", "metric_id", "entities", "geography", "period", "unit", "comparison_basis", "is_comparable", "comparability_issues", "source_fact_ids"],
+      "properties": {
+        "comparison_id": {"type": "string"},
+        "metric_id": {"type": "string"},
+        "entities": {"type": "array"},
+        "geography": {"type": ["string", "null"]},
+        "period": {"type": ["string", "null"]},
+        "unit": {"type": ["string", "null"]},
+        "comparison_basis": {"type": "string"},
+        "is_comparable": {"type": "boolean"},
+        "comparability_issues": {"type": "array", "items": {"type": "string"}},
+        "source_fact_ids": {"type": "array", "items": {"type": "string"}},
+        "source_observation_ids": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  }
+}

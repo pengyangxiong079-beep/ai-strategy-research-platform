@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "run_id", "revision_id", "topic", "normalized_analysis_type", "current_stage", "overall_status", "stages", "created_at", "updated_at"],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "run_id": {"type": "string", "minLength": 1},
+    "revision_id": {"type": "string", "pattern": "^rev_[0-9]{3,}$"},
+    "overall_status": {"enum": ["DRAFT_SCOPE", "AWAITING_SCOPE_CONFIRMATION", "RUNNING", "AWAITING_HUMAN_REVIEW", "BLOCKED_DATA", "BLOCKED_QUALITY", "COMPLETED", "COMPLETED_WITH_WARNINGS", "REVISION_IN_PROGRESS", "FAILED_TECHNICAL"]},
+    "stages": {"type": "object", "minProperties": 10}
+  }
+}

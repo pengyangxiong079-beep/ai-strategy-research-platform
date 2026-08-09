@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "sources"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "sources": {"type": "array", "items": {"$ref": "#/$defs/source"}}
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["source_id", "title", "publisher", "url", "source_type", "source_grade", "publication_date", "accessed_at", "language", "geography", "is_primary_source", "datasets_supported", "access_status", "access_issue"],
+      "properties": {
+        "source_id": {"type": "string", "minLength": 1},
+        "title": {"type": "string"},
+        "publisher": {"type": "string"},
+        "url": {"type": "string"},
+        "source_type": {"type": "string"},
+        "source_grade": {"enum": ["GRADE_A", "GRADE_B", "GRADE_C", "GRADE_D", "GRADE_E", "UNKNOWN"]},
+        "publication_date": {"type": "string"},
+        "accessed_at": {"type": "string"},
+        "language": {"type": "string"},
+        "geography": {"type": "string"},
+        "is_primary_source": {"type": "boolean"},
+        "datasets_supported": {"type": "array", "items": {"type": "string"}},
+        "access_status": {"enum": ["SUCCESS", "PAYWALL", "LOGIN_REQUIRED", "CAPTCHA", "ROBOTS_BLOCKED", "NOT_FOUND", "NETWORK_ERROR", "REJECTED"]},
+        "access_issue": {"type": "string"}
+      }
+    }
+  }
+}

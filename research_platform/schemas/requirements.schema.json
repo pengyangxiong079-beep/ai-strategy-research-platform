@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "analysis_type", "topic", "industry", "geography", "analysis_date", "datasets"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "analysis_type": {"type": "string"},
+    "topic": {"type": "string"},
+    "industry": {"type": "string"},
+    "geography": {"type": "string"},
+    "analysis_date": {"type": "string"},
+    "datasets": {"type": "array", "items": {"$ref": "#/$defs/dataset"}}
+  },
+  "$defs": {
+    "dataset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dataset_id", "priority", "purpose", "required_fields", "minimum_entities", "minimum_observations_per_entity", "minimum_periods", "required_comparability_fields", "preferred_sources", "fallback_sources", "proxy_allowed", "dashboard_components", "component_minimums"],
+      "properties": {
+        "dataset_id": {"type": "string", "minLength": 1},
+        "priority": {"enum": ["CRITICAL", "IMPORTANT", "OPTIONAL"]},
+        "purpose": {"type": "string"},
+        "required_fields": {"type": "array", "items": {"type": "string"}},
+        "minimum_entities": {"type": "integer", "minimum": 0},
+        "minimum_observations_per_entity": {"type": "integer", "minimum": 0},
+        "minimum_periods": {"type": "integer", "minimum": 0},
+        "required_comparability_fields": {"type": "array", "items": {"type": "string"}},
+        "required_metrics": {"type": "array", "items": {"type": "string"}},
+        "preferred_sources": {"type": "array", "items": {"type": "string"}},
+        "fallback_sources": {"type": "array", "items": {"type": "string"}},
+        "proxy_allowed": {"type": "boolean"},
+        "dashboard_components": {"type": "array", "items": {"type": "string"}},
+        "component_minimums": {"type": "object"}
+      }
+    }
+  }
+}

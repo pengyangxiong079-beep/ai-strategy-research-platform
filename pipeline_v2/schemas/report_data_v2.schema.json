@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "meta", "content_blocks", "metrics", "time_series", "comparisons", "recommendations", "scenarios"],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "meta": {
+      "type": "object",
+      "required": ["run_id", "revision_id", "final_report_sha256"],
+      "properties": {"final_report_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}}
+    },
+    "content_blocks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["block_id", "section_id", "claim_type", "text", "fact_ids", "review_ids", "human_feedback_ids", "source_observation_ids"],
+        "properties": {"claim_type": {"enum": ["FACT", "INFERENCE", "RECOMMENDATION", "PENDING"]}}
+      }
+    },
+    "metrics": {"type": "array"},
+    "time_series": {"type": "array"},
+    "comparisons": {"type": "array"},
+    "recommendations": {"type": "array"},
+    "scenarios": {"type": "array"},
+    "validation_errors": {"type": "array"}
+  }
+}

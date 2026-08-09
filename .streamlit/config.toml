@@ -1,0 +1,15 @@
+[theme]
+primaryColor = "#1F5A94"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F5F7FA"
+textColor = "#17202A"
+borderColor = "#D9E0E7"
+baseRadius = "8px"
+buttonRadius = "6px"
+
+[server]
+runOnSave = true
+
+[client]
+showErrorDetails = true
+

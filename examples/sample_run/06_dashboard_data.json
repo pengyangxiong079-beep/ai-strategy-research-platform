@@ -1,0 +1,46 @@
+{
+  "schema_version": "2.0",
+  "meta": {
+    "run_id": "public_fixture_company_strategy",
+    "revision_id": "rev_000",
+    "topic": "Example Group synthetic strategy fixture",
+    "analysis_type": "COMPANY_STRATEGY",
+    "is_test_fixture": true
+  },
+  "metrics": [
+    {
+      "metric_id": "fixture_revenue",
+      "label": "Fixture revenue",
+      "value": 120,
+      "unit": "test units",
+      "period": "2025",
+      "geography": "Testland",
+      "value_type": "HISTORICAL",
+      "verification_status": "SUPPORTED",
+      "temporal_status": "HISTORICAL",
+      "source_fact_ids": ["F1"],
+      "source_observation_ids": ["OBS_FIXTURE_REVENUE_2025"]
+    }
+  ],
+  "observations": [
+    {
+      "observation_id": "OBS_FIXTURE_REVENUE_2025",
+      "source_id": "SRC_FIXTURE_001",
+      "dashboard_eligible": true
+    }
+  ],
+  "time_series": [],
+  "segments": [],
+  "comparisons": [],
+  "geographies": [],
+  "scenarios": [],
+  "risks": [],
+  "opportunities": [],
+  "initiatives": [],
+  "components": [
+    {"component_id": "kpi_summary", "status": "READY", "reason": ""}
+  ],
+  "quality": {"status": "PASS"},
+  "revision": {"revision_id": "rev_000", "revision_count": 0},
+  "dashboard_status": "READY"
+}

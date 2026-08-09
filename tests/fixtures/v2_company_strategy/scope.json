@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "analysis_type": "公司战略",
+  "analysis_type_id": "COMPANY_STRATEGY",
+  "topic": "Example Group虚构公司战略离线Fixture",
+  "industry": "generic",
+  "geography": "Testland",
+  "analysis_date": "2026-01-02",
+  "required_sections": ["overview", "strategy"],
+  "focus_questions": ["如何验证严格V2全链路？"],
+  "competitors": [],
+  "is_test_fixture": true
+}

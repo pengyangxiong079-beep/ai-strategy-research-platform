@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "observations"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "observations": {"type": "array", "items": {"$ref": "#/$defs/observation"}}
+  },
+  "$defs": {
+    "observation": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["observation_id", "dataset_id", "entity", "metric_id", "metric", "product_name", "category", "value", "text_value", "unit", "currency", "period", "period_type", "observed_at", "as_of_date", "geography", "entity_scope", "channel", "channel_scope", "price_type", "value_type", "metric_definition", "source_id", "source_url", "evidence_excerpt", "source_grade", "verification_status", "temporal_status", "confidence", "comparability_group", "notes"],
+      "properties": {
+        "observation_id": {"type": "string", "minLength": 1},
+        "dataset_id": {"type": "string", "minLength": 1},
+        "entity": {"type": "string"},
+        "metric": {"type": "string"},
+        "metric_id": {"type": "string", "minLength": 1},
+        "product_name": {"type": "string"},
+        "category": {"type": "string"},
+        "value": {"type": ["number", "null"]},
+        "text_value": {"type": "string"},
+        "unit": {"type": "string"},
+        "currency": {"type": "string"},
+        "period": {"type": "string"},
+        "period_type": {"type": "string"},
+        "observed_at": {"type": "string"},
+        "as_of_date": {"type": "string"},
+        "geography": {"type": "string"},
+        "entity_scope": {"type": "string"},
+        "channel": {"type": "string"},
+        "channel_scope": {"type": "string"},
+        "price_type": {"type": "string"},
+        "value_type": {"enum": ["ACTUAL", "HISTORICAL", "ESTIMATE", "FORECAST", "SCENARIO", "TARGET", "PROXY", "UNKNOWN"]},
+        "metric_definition": {"type": "string"},
+        "source_id": {"type": "string"},
+        "source_url": {"type": "string"},
+        "evidence_excerpt": {"type": "string", "maxLength": 500},
+        "source_grade": {"enum": ["GRADE_A", "GRADE_B", "GRADE_C", "GRADE_D", "GRADE_E", "UNKNOWN"]},
+        "verification_status": {"enum": ["SUPPORTED", "PARTIAL", "UNSUPPORTED", "NOT_CHECKED"]},
+        "temporal_status": {"enum": ["CURRENT", "HISTORICAL", "FUTURE_PLAN", "SUPERSEDED", "UNKNOWN"]},
+        "confidence": {"type": ["number", "string", "null"]},
+        "comparability_group": {"type": "string"},
+        "notes": {"type": "string"}
+      }
+    }
+  }
+}

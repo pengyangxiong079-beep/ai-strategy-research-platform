@@ -1,0 +1,43 @@
+{
+  "schema_version": "2.0",
+  "meta": {
+    "run_id": "public_fixture_company_strategy",
+    "revision_id": "rev_000",
+    "is_test_fixture": true
+  },
+  "content_blocks": [
+    {
+      "block_id": "B1",
+      "section_id": "overview",
+      "section_title": "Overview",
+      "claim_type": "FACT",
+      "text": "The fixture records 120 test units for Example Group in 2025.",
+      "fact_ids": ["F1"],
+      "claim_ids": ["CLM_FIXTURE_REVENUE"],
+      "source_observation_ids": ["OBS_FIXTURE_REVENUE_2025"]
+    }
+  ],
+  "metrics": [
+    {
+      "metric_id": "fixture_revenue",
+      "label": "Fixture revenue",
+      "value": 120,
+      "unit": "test units",
+      "currency": null,
+      "geography": "Testland",
+      "period": "2025",
+      "value_type": "HISTORICAL",
+      "source_fact_ids": ["F1"],
+      "source_observation_ids": ["OBS_FIXTURE_REVENUE_2025"],
+      "source_grade": "GRADE_A",
+      "confidence": "HIGH"
+    }
+  ],
+  "time_series": [],
+  "comparisons": [],
+  "recommendations": [],
+  "scenarios": [],
+  "_meta": {
+    "observation_ids": ["OBS_FIXTURE_REVENUE_2025"]
+  }
+}

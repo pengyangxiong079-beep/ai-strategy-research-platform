@@ -1,0 +1,22 @@
+{
+  "schema_version": "2.0",
+  "observations": [
+    {
+      "observation_id": "OBS_FIXTURE_REVENUE_2025",
+      "dataset_id": "financial_time_series",
+      "entity": "Example Group",
+      "metric": "fixture_revenue",
+      "value": 120,
+      "unit": "test units",
+      "period": "2025",
+      "geography": "Testland",
+      "metric_definition": "Synthetic value used only to demonstrate lineage.",
+      "source_id": "SRC_FIXTURE_001",
+      "value_type": "HISTORICAL",
+      "verification_status": "SUPPORTED",
+      "temporal_status": "HISTORICAL",
+      "comparability_group": "fixture_revenue_testland_annual",
+      "is_test_fixture": true
+    }
+  ]
+}

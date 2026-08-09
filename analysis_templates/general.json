@@ -1,0 +1,11 @@
+{
+  "template_id": "general",
+  "template_name": "通用行业与公司战略研究模板",
+  "applicable_industries": ["通用", "其他", "自动判断"],
+  "required_sections": ["分析范围与口径", "行业/产品定位", "市场规模与增长", "产业链与价值链", "客户与需求", "商业模式", "竞争格局", "核心能力与壁垒", "政策、技术及宏观趋势", "风险与机会", "战略建议", "尚待验证问题", "Review问题处理情况", "Human Feedback处理情况"],
+  "optional_sections": ["PESTEL", "Porter五力", "SWOT", "TAM/SAM/SOM", "竞品矩阵"],
+  "industry_metrics": ["市场规模", "增长率", "客户结构", "盈利模式"],
+  "preferred_sources": ["政府与监管机构", "官方统计", "上市公司财报", "公司公告", "行业协会", "学术研究"],
+  "risk_dimensions": ["政策", "宏观", "市场", "竞争", "运营", "供应链", "财务", "合规"],
+  "comparison_dimensions": ["目标客户", "产品与服务", "价格", "渠道", "商业模式", "核心能力", "风险"]
+}

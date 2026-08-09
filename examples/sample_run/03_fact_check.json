@@ -1,0 +1,28 @@
+{
+  "schema_version": "2.0",
+  "claims": [
+    {
+      "claim_id": "CLM_FIXTURE_REVENUE",
+      "display_id": "F1",
+      "claim_type": "FACT",
+      "text": "The fixture records 120 test units for Example Group in 2025.",
+      "atomicity_status": "ATOMIC",
+      "observation_ids": ["OBS_FIXTURE_REVENUE_2025"],
+      "source_ids": ["SRC_FIXTURE_001"],
+      "verification_status": "SUPPORTED",
+      "temporal_status": "HISTORICAL",
+      "source_grade_max": "GRADE_A",
+      "status": "ACTIVE",
+      "is_test_fixture": true
+    }
+  ],
+  "observation_verifications": [
+    {
+      "observation_id": "OBS_FIXTURE_REVENUE_2025",
+      "claim_id": "CLM_FIXTURE_REVENUE",
+      "verification_status": "SUPPORTED",
+      "temporal_status": "HISTORICAL",
+      "source_ids": ["SRC_FIXTURE_001"]
+    }
+  ]
+}

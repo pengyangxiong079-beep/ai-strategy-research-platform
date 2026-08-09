@@ -1,0 +1,3 @@
+from .types import COMMON_FALLBACK, COMMON_PRIMARY, requirement
+
+REQUIREMENTS = tuple(requirement(x, "CRITICAL", f"增长战略核心数据：{x}", periods=3 if x == "historical_growth" else 1, primary=COMMON_PRIMARY, fallback=COMMON_FALLBACK, proxy=x == "revenue_or_usage_drivers") for x in ("historical_growth", "revenue_or_usage_drivers", "customer_segments", "product_segments", "channels", "geographies")) + tuple(requirement(x, "IMPORTANT", f"增长机会数据：{x}", proxy=True) for x in ("market_whitespace", "acquisition", "retention", "pricing", "cross_sell", "new_products")) + tuple(requirement(x, "OPTIONAL", f"增长补充数据：{x}", proxy=True) for x in ("cohort_data", "detailed_customer_lifetime_value"))

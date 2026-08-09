@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "report_data.schema.json",
+  "title": "Strategic Research Report Data",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "scope",
+    "executive_summary",
+    "kpis",
+    "time_series",
+    "market_segments",
+    "competitor_comparisons",
+    "risks",
+    "opportunities",
+    "recommendations",
+    "roadmap",
+    "evidence_summary",
+    "data_gaps"
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0"},
+    "scope": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["topic", "analysis_type", "geography", "analysis_date"],
+      "properties": {
+        "topic": {"type": "string", "minLength": 1},
+        "analysis_type": {"type": "string", "minLength": 1},
+        "industry": {"type": ["string", "null"]},
+        "geography": {"type": "string", "minLength": 1},
+        "analysis_date": {"type": "string", "minLength": 4},
+        "selected_template": {"type": ["string", "null"]}
+      }
+    },
+    "executive_summary": {"type": "string"},
+    "kpis": {"type": "array", "items": {"$ref": "#/$defs/metric"}},
+    "time_series": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["series_id", "label", "points"],
+        "properties": {
+          "series_id": {"type": "string", "minLength": 1},
+          "label": {"type": "string", "minLength": 1},
+          "chart_type": {"type": "string", "enum": ["LINE", "BAR", "BAR_LINE"]},
+          "points": {"type": "array", "items": {"$ref": "#/$defs/metric"}}
+          ,"source_observation_ids": {"type": "array", "items": {"type": "string"}}
+          ,"comparability_note": {"type": "string"}
+        }
+      }
+    },
+    "market_segments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["segment_id", "label", "metrics"],
+        "properties": {
+          "segment_id": {"type": "string", "minLength": 1},
+          "label": {"type": "string", "minLength": 1},
+          "metrics": {"type": "array", "items": {"$ref": "#/$defs/metric"}}
+        }
+      }
+    },
+    "competitor_comparisons": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["comparison_id", "entities", "metric", "geography", "period", "unit", "currency", "comparable", "comparison_basis", "ranking_claim", "source_fact_ids"],
+        "properties": {
+          "comparison_id": {"type": "string", "minLength": 1},
+          "metric_id": {"type": "string"},
+          "entities": {"type": "array", "minItems": 2, "items": {"type": "string", "minLength": 1}},
+          "metric": {"type": "string", "minLength": 1},
+          "unit": {"type": ["string", "null"]},
+          "currency": {"type": ["string", "null"]},
+          "geography": {"type": ["string", "null"]},
+          "period": {"type": ["string", "null"]},
+          "comparable": {"type": "boolean"},
+          "is_comparable": {"type": "boolean"},
+          "comparability_issues": {"type": "array", "items": {"type": "string"}},
+          "metric_definition": {"type": "string"},
+          "channel_scope": {"type": ["string", "null"]},
+          "entity_scope": {"type": ["string", "null"]},
+          "comparison_basis": {"type": "string"},
+          "ranking_claim": {"type": "boolean"},
+          "source_fact_ids": {"type": "array", "items": {"type": "string", "pattern": "^F[0-9]+$"}},
+          "source_observation_ids": {"type": "array", "items": {"type": "string"}},
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["entity", "value"],
+              "properties": {
+                "entity": {"type": "string", "minLength": 1},
+                "value": {"type": ["number", "string", "null"]}
+              }
+            }
+          }
+        }
+      }
+    },
+    "risks": {"type": "array", "items": {"$ref": "#/$defs/strategic_item"}},
+    "opportunities": {"type": "array", "items": {"$ref": "#/$defs/strategic_item"}},
+    "recommendations": {"type": "array", "items": {"$ref": "#/$defs/strategic_item"}},
+    "scenarios": {"type": "array", "items": {"$ref": "#/$defs/scenario"}},
+    "roadmap": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["item_id", "label", "start", "end", "status", "source_fact_ids"],
+        "properties": {
+          "item_id": {"type": "string", "minLength": 1},
+          "label": {"type": "string", "minLength": 1},
+          "start": {"type": ["string", "null"]},
+          "end": {"type": ["string", "null"]},
+          "status": {"type": "string"},
+          "description": {"type": "string"},
+          "source_fact_ids": {"type": "array", "items": {"type": "string", "pattern": "^F[0-9]+$"}}
+        }
+      }
+    },
+    "evidence_summary": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["verified", "partial", "unsupported", "superseded"],
+      "properties": {
+        "verified": {"type": "integer", "minimum": 0},
+        "partial": {"type": "integer", "minimum": 0},
+        "unsupported": {"type": "integer", "minimum": 0},
+        "superseded": {"type": "integer", "minimum": 0}
+      }
+    },
+    "data_gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["gap_id", "label", "reason"],
+        "properties": {
+          "gap_id": {"type": "string", "minLength": 1},
+          "label": {"type": "string", "minLength": 1},
+          "reason": {"type": "string", "minLength": 1},
+          "required_action": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "_meta": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "final_report_sha256": {"type": "string"}
+      }
+    }
+  },
+  "$defs": {
+    "value_type": {"type": "string", "enum": ["ACTUAL", "HISTORICAL", "FORECAST", "TARGET", "SCENARIO", "ESTIMATE", "PROXY", "UNKNOWN"]},
+    "source_grade": {"type": "string", "enum": ["A", "B", "C", "D", "N/A"]},
+    "confidence": {"type": "string", "enum": ["HIGH", "MEDIUM", "LOW"]},
+    "metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metric_id", "label", "value", "unit", "currency", "geography", "period", "value_type", "source_fact_ids", "source_grade", "confidence"],
+      "properties": {
+        "metric_id": {"type": "string", "minLength": 1},
+        "label": {"type": "string", "minLength": 1},
+        "value": {"type": ["number", "null"]},
+        "unit": {"type": ["string", "null"]},
+        "currency": {"type": ["string", "null"]},
+        "geography": {"type": ["string", "null"]},
+        "period": {"type": ["string", "null"]},
+        "value_type": {"$ref": "#/$defs/value_type"},
+        "metric_definition": {"type": "string"},
+        "channel_scope": {"type": ["string", "null"]},
+        "entity_scope": {"type": ["string", "null"]},
+        "comparability_group": {"type": "string"},
+        "source_fact_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^F[0-9]+$"}},
+        "source_observation_ids": {"type": "array", "items": {"type": "string"}},
+        "source_grade": {"$ref": "#/$defs/source_grade"},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "strategic_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["item_id", "label", "description", "source_fact_ids"],
+      "properties": {
+        "item_id": {"type": "string", "minLength": 1},
+        "label": {"type": "string", "minLength": 1},
+        "description": {"type": "string"},
+        "severity": {"type": ["string", "null"]},
+        "timeframe": {"type": ["string", "null"]},
+        "owner": {"type": ["string", "null"]},
+        "priority": {"type": ["string", "null"]},
+        "rationale": {"type": "string"},
+        "time_horizon": {"type": ["string", "null"]},
+        "responsible_function": {"type": ["string", "null"]},
+        "required_capabilities": {"type": "array", "items": {"type": "string"}},
+        "related_risks": {"type": "array", "items": {"type": "string"}},
+        "related_opportunities": {"type": "array", "items": {"type": "string"}},
+        "kpi": {"type": ["string", "null"]},
+        "source_fact_ids": {"type": "array", "items": {"type": "string", "pattern": "^F[0-9]+$"}}
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["scenario_id", "label", "base_period", "end_period", "value_type", "starting_value", "annual_points", "assumptions", "formula", "target_value", "target_gap", "trigger_conditions", "risks", "source_fact_ids", "source_observation_ids", "confidence"],
+      "properties": {
+        "scenario_id": {"type": "string", "minLength": 1},
+        "label": {"type": "string", "minLength": 1},
+        "base_period": {"type": "string"},
+        "end_period": {"type": "string"},
+        "value_type": {"const": "MODELLED"},
+        "starting_value": {"type": ["number", "null"]},
+        "annual_points": {"type": "array"},
+        "assumptions": {"type": "array"},
+        "formula": {"type": "string"},
+        "target_value": {"type": ["number", "null"]},
+        "target_gap": {"type": ["number", "null"]},
+        "trigger_conditions": {"type": "array"},
+        "risks": {"type": "array"},
+        "source_fact_ids": {"type": "array", "items": {"type": "string"}},
+        "source_observation_ids": {"type": "array", "items": {"type": "string"}},
+        "confidence": {"type": ["string", "number", "null"]}
+      }
+    }
+  }
+}

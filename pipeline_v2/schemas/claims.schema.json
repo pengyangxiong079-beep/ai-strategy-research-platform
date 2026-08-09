@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object", "required": ["schema_version", "claims"],
+  "properties": {"schema_version": {"const": "2.0"}, "claims": {"type": "array", "items": {"type": "object", "required": ["claim_id", "claim_type", "text", "atomicity_status", "observation_ids", "source_ids", "verification_status", "temporal_status", "status"]}}}
+}

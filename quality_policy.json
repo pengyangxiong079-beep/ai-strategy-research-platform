@@ -1,0 +1,6 @@
+{
+  "deterministic_failure_enabled": true,
+  "heuristic_max_severity": "WARN",
+  "require_location_for_fail": true,
+  "markdown_semantic_checks": "WARN_ONLY"
+}

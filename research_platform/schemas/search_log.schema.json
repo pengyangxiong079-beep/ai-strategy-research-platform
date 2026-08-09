@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "entries", "rounds_completed", "stop_reason"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["query_id", "gap_id", "query_text", "language", "domain_filter", "executed_at", "result_count", "opened_sources", "accepted_sources", "rejection_reasons", "execution_status"],
+        "properties": {
+          "query_id": {"type": "string", "minLength": 1},
+          "gap_id": {"type": "string"},
+          "query_text": {"type": "string", "minLength": 1},
+          "language": {"type": "string"},
+          "domain_filter": {"type": "string"},
+          "executed_at": {"type": ["string", "null"]},
+          "result_count": {"type": ["integer", "null"], "minimum": 0},
+          "opened_sources": {"type": "array"},
+          "accepted_sources": {"type": "array"},
+          "rejection_reasons": {"type": "array"},
+          "execution_status": {"enum": ["COMPLETED", "PLANNED_NOT_EXECUTED"]}
+        }
+      }
+    },
+    "rounds_completed": {"type": "integer", "minimum": 0, "maximum": 3},
+    "stop_reason": {"type": "string"}
+  }
+}

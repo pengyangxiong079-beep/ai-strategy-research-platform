@@ -1,0 +1,42 @@
+# Python
+.venv/
+venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Secrets and local sessions
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+tokens.json
+cookies.json
+auth.json
+browser-data/
+.streamlit/secrets.toml
+.codex/
+
+# Generated/private research artifacts
+outputs/
+audit/
+tests/artifacts/
+*.log
+*.tmp
+
+# Frontend
+dashboard-web/node_modules/
+dashboard-web/dist/
+dashboard-web/public/data/
+dashboard-web/.vite/
+coverage/
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

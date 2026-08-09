@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "issues"],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["review_id", "severity", "category", "issue", "evidence", "required_action", "status"],
+        "properties": {
+          "review_id": {"type": "string", "pattern": "^R[1-9][0-9]*$"},
+          "severity": {"enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW", "ERROR", "WARNING", "INFO"]},
+          "category": {"type": "string", "minLength": 1},
+          "issue": {"type": "string", "minLength": 1},
+          "evidence": {"type": "string"},
+          "required_action": {"type": "string"},
+          "status": {"enum": ["OPEN", "RESOLVED", "ACCEPTED", "DEFERRED"]}
+        }
+      }
+    }
+  }
+}

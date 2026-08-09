@@ -1,0 +1,3 @@
+from .types import COMMON_FALLBACK, COMMON_PRIMARY, requirement
+
+REQUIREMENTS = tuple(requirement(x, "CRITICAL", f"投资并购核心数据：{x}", entities=3 if x == "comparable_companies" else 1, periods=3 if x == "financial_history" else 1, primary=COMMON_PRIMARY, fallback=COMMON_FALLBACK) for x in ("financial_history", "ownership", "valuation", "comparable_companies", "market_position", "risks")) + tuple(requirement(x, "IMPORTANT", f"交易评估数据：{x}", proxy=x in {"synergies", "integration_requirements"}) for x in ("transactions", "synergies", "management", "debt", "cash_flow", "integration_requirements")) + tuple(requirement(x, "OPTIONAL", f"交易补充数据：{x}", proxy=True) for x in ("detailed_customer_metrics", "operational_benchmarking"))

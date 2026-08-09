@@ -1,0 +1,15 @@
+{
+  "schema_version": "2.0",
+  "analysis_type": "Company Strategy",
+  "analysis_type_id": "COMPANY_STRATEGY",
+  "selected_template": "company_strategy",
+  "topic": "Example Group synthetic strategy fixture",
+  "industry": "synthetic",
+  "geography": "Testland",
+  "analysis_date": "2026-01-02",
+  "time_horizon": "2026-2030",
+  "required_sections": ["overview", "strategy"],
+  "focus_questions": ["How does the evidence-to-dashboard lineage work?"],
+  "competitors": [],
+  "is_test_fixture": true
+}

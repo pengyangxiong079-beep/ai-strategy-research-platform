@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["rule_id", "stage", "artifact", "location", "entity_id", "excerpt", "reason", "expected", "actual", "suggested_action", "repair_type", "severity"],
+  "properties": {"repair_type": {"enum": ["LOCAL_REPAIRABLE", "STAGE_RETRY", "UPSTREAM_DATA_REQUIRED", "HUMAN_REQUIRED"]}, "severity": {"enum": ["ERROR", "WARNING"]}}
+}

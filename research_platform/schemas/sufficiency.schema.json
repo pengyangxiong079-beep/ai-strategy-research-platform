@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "analysis_type", "overall_status", "gap_search_rounds_completed", "search_stop_reason", "datasets", "critical_gaps"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "analysis_type": {"type": "string"},
+    "overall_status": {"enum": ["PASS", "PARTIAL", "INSUFFICIENT"]},
+    "gap_search_rounds_completed": {"type": "integer", "minimum": 0, "maximum": 2},
+    "search_stop_reason": {"type": "string"},
+    "datasets": {"type": "array"},
+    "critical_gaps": {"type": "array"}
+  }
+}

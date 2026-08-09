@@ -1,0 +1,3 @@
+from .types import COMMON_FALLBACK, COMMON_PRIMARY, requirement
+
+REQUIREMENTS = tuple(requirement(x, "CRITICAL", f"商业模式核心数据：{x}", primary=COMMON_PRIMARY, fallback=COMMON_FALLBACK, proxy=x in {"value_proposition", "key_resources"}) for x in ("revenue_streams", "customer_groups", "value_proposition", "channels", "key_resources", "cost_structure")) + tuple(requirement(x, "IMPORTANT", f"商业模式诊断数据：{x}", proxy=x in {"partners", "value_chain"}) for x in ("unit_economics", "gross_margin", "contribution_margin", "partners", "value_chain")) + tuple(requirement(x, "OPTIONAL", f"商业模式补充数据：{x}", proxy=True) for x in ("customer_acquisition_cost", "lifetime_value", "break_even_data"))
