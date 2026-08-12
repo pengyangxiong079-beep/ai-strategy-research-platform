@@ -374,6 +374,47 @@ def _v2_evidence(fact, analysis_date):
     }
 
 
+def _structured_strategic_findings(observations):
+    """Project qualitative structured evidence into reusable strategy cards."""
+    allowed = {
+        "value_chain": "价值链",
+        "profit_pools": "利润池",
+        "technology_trends": "技术趋势",
+        "demand_drivers": "需求驱动",
+        "strategic_initiatives": "战略行动",
+        "capabilities": "能力",
+    }
+    findings = []
+    for item in observations:
+        dataset_id = str(item.get("dataset_id") or "")
+        text = str(item.get("text_value") or "").strip()
+        facts = [
+            value for value in item.get("source_fact_ids") or []
+            if re.fullmatch(r"F\d+", str(value), re.I)
+        ]
+        if (
+            dataset_id not in allowed or not text or not facts
+            or str(item.get("verification_status") or "").upper() not in {"SUPPORTED", "PARTIAL"}
+            or str(item.get("temporal_status") or "").upper() == "SUPERSEDED"
+        ):
+            continue
+        metric = str(item.get("metric") or item.get("metric_id") or allowed[dataset_id])
+        entity = str(item.get("entity") or "").strip()
+        findings.append({
+            "item_id": f"OBS_FINDING_{item.get('observation_id')}",
+            "label": f"{allowed[dataset_id]} · {entity or metric}",
+            "description": text,
+            "severity": None,
+            "timeframe": item.get("period") or None,
+            "owner": None,
+            "priority": None,
+            "source_fact_ids": list(dict.fromkeys(facts)),
+            "dataset_id": dataset_id,
+            "verification_status": item.get("verification_status"),
+        })
+    return findings
+
+
 def _revision_count(output_folder):
     revisions = Path(output_folder) / "revisions"
     if not revisions.is_dir():
@@ -427,6 +468,13 @@ def _v2_payload(
         }
         for item in observation_payload.get("observations", [])
     ]
+    structured_findings = _structured_strategic_findings(dashboard_observations)
+    strategic_options = list(filtered.get("strategic_options") or [])
+    existing_option_ids = {item.get("item_id") for item in strategic_options}
+    strategic_options.extend(
+        item for item in structured_findings
+        if item.get("item_id") not in existing_option_ids
+    )
     return {
         "schema_version": DASHBOARD_SCHEMA_VERSION,
         "dashboard_status": status,
@@ -454,7 +502,7 @@ def _v2_payload(
         "geographies": filtered.get("geographies") or [],
         "risks": filtered.get("risks") or [],
         "opportunities": filtered.get("opportunities") or [],
-        "strategic_options": filtered.get("strategic_options") or [],
+        "strategic_options": strategic_options,
         "recommendations": [
             _recommendation(item) for item in filtered.get("recommendations", [])
         ],

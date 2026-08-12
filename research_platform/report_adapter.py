@@ -2,6 +2,7 @@
 
 from collections import defaultdict
 import hashlib
+import re
 from statistics import median
 
 
@@ -20,6 +21,20 @@ def _fact_ids(rows):
     return list(dict.fromkeys(fact_id for row in rows for fact_id in row.get("source_fact_ids", []) if str(fact_id).startswith("F")))
 
 
+def _effective_value_type(row):
+    value_type = VALUE_TYPE_MAP.get(
+        str(row.get("value_type") or "UNKNOWN").upper(),
+        str(row.get("value_type") or "UNKNOWN").upper(),
+    )
+    if value_type in {"", "UNKNOWN"}:
+        temporal = str(row.get("temporal_status") or "UNKNOWN").upper()
+        if temporal == "FUTURE_PLAN":
+            return "FORECAST"
+        if temporal in {"CURRENT", "HISTORICAL"}:
+            return "ACTUAL"
+    return value_type or "UNKNOWN"
+
+
 def _metric_payload(row):
     metric_id = str(row.get("metric_id") or row.get("metric") or row.get("observation_id"))
     confidence = str(row.get("confidence") or "MEDIUM").upper()
@@ -27,13 +42,13 @@ def _metric_payload(row):
         confidence = "MEDIUM"
     return {
         "metric_id": f"OBS_{row.get('observation_id')}",
-        "label": METRIC_LABELS.get(metric_id, metric_id),
+        "label": METRIC_LABELS.get(metric_id, row.get("metric") or metric_id),
         "value": row.get("value"),
         "unit": row.get("unit") or None,
         "currency": row.get("currency") or None,
         "geography": row.get("geography") or None,
         "period": row.get("period") or None,
-        "value_type": VALUE_TYPE_MAP.get(str(row.get("value_type") or "UNKNOWN"), str(row.get("value_type") or "UNKNOWN")),
+        "value_type": _effective_value_type(row),
         "metric_definition": row.get("metric_definition") or metric_id,
         "channel_scope": row.get("channel") or None,
         "entity_scope": row.get("entity_scope") or row.get("entity") or None,
@@ -49,6 +64,11 @@ def enrich_report_data(report_data, observations, sufficiency):
     """Add only supported/partial observations; never mine narrative Markdown."""
     if not isinstance(report_data, dict):
         return report_data
+    for collection in (
+        "kpis", "time_series", "market_segments", "competitor_comparisons",
+        "data_gaps",
+    ):
+        report_data.setdefault(collection, [])
     usable = [row for row in observations if row.get("verification_status") in {"SUPPORTED", "PARTIAL"} and row.get("source_fact_ids")]
     gaps = []
     for dataset in sufficiency.get("datasets", []):
@@ -67,12 +87,66 @@ def enrich_report_data(report_data, observations, sufficiency):
     ]
     existing_gap_ids = {item.get("gap_id") for item in report_data["data_gaps"]}
     report_data["data_gaps"].extend(item for item in gaps if item["gap_id"] not in existing_gap_ids)
-    # Rebuild generated series so reruns cannot retain stale scope/geography groupings.
+    # Rebuild generated views so reruns cannot retain stale scope/geography
+    # groupings. Existing Strategy-authored items remain authoritative.
+    report_data["kpis"] = [
+        item for item in report_data.get("kpis", [])
+        if not str(item.get("metric_id") or "").startswith("OBS_KPI_")
+    ]
     report_data["time_series"] = [
         item for item in report_data.get("time_series", [])
         if not str(item.get("series_id") or "").startswith("OBS_TS_")
     ]
-    # Create time series only within one metric, entity scope, geography, unit, currency and period type.
+    report_data["market_segments"] = [
+        item for item in report_data.get("market_segments", [])
+        if not str(item.get("segment_id") or "").startswith("OBS_SEG_")
+    ]
+
+    numeric_usable = [row for row in usable if row.get("value") is not None]
+
+    def period_key(row):
+        values = [int(value) for value in re.findall(r"\d+", str(row.get("period") or ""))]
+        return tuple(values) or (0,)
+
+    # Select decision-useful KPI snapshots without manufacturing scores. One
+    # latest actual and one latest future point may represent the same metric;
+    # segment values then fill the remaining slots, up to four cards in total.
+    kpi_groups = defaultdict(list)
+    for row in numeric_usable:
+        family = "FUTURE" if _effective_value_type(row) in {"FORECAST", "TARGET", "SCENARIO"} else "OBSERVED"
+        kpi_groups[(row.get("entity"), row.get("metric_id") or row.get("metric"), family)].append(row)
+    kpi_candidates = [max(rows, key=period_key) for rows in kpi_groups.values()]
+    dataset_priority = {
+        "market_size": 0, "financial_time_series": 1, "operating_metrics": 1,
+        "forecast_growth": 2, "historical_growth": 2, "market_segments": 3,
+        "business_segments": 3, "product_segments": 3,
+    }
+    kpi_candidates.sort(
+        key=lambda row: (
+            dataset_priority.get(row.get("dataset_id"), 9),
+            0 if _effective_value_type(row) not in {"FORECAST", "TARGET", "SCENARIO"} else 1,
+            tuple(-value for value in period_key(row)),
+            str(row.get("entity") or ""),
+        )
+    )
+    used_observation_ids = {
+        observation_id
+        for item in report_data["kpis"]
+        for observation_id in item.get("source_observation_ids", [])
+    }
+    remaining_slots = max(0, 4 - len(report_data["kpis"]))
+    for row in (candidate for candidate in kpi_candidates if candidate.get("observation_id") not in used_observation_ids):
+        if remaining_slots <= 0:
+            break
+        metric = _metric_payload(row)
+        metric["metric_id"] = f"OBS_KPI_{row.get('observation_id')}"
+        metric["label"] = f"{row.get('entity')} · {metric['label']}"
+        report_data["kpis"].append(metric)
+        remaining_slots -= 1
+
+    # Create time series only within one metric, entity scope, geography, unit,
+    # currency and period type. Dataset IDs are intentionally excluded so an
+    # actual market-size series can continue into a forecast-growth series.
     series_groups = defaultdict(list)
     for row in usable:
         if row.get("value") is None or row.get("dataset_id") not in {
@@ -81,7 +155,7 @@ def enrich_report_data(report_data, observations, sufficiency):
         }:
             continue
         key = (
-            row.get("dataset_id"), row.get("metric_id") or row.get("metric"), row.get("entity"),
+            row.get("metric_id") or row.get("metric"), row.get("entity"),
             row.get("entity_scope"), row.get("geography"), row.get("unit"), row.get("currency"),
             row.get("period_type"),
         )
@@ -94,7 +168,7 @@ def enrich_report_data(report_data, observations, sufficiency):
                 periods.setdefault(row["period"], row)
         if len(periods) < 2:
             continue
-        dataset_id, metric_id, entity, entity_scope, geography, unit, currency, period_type = key
+        metric_id, entity, entity_scope, geography, unit, currency, period_type = key
         suffix = hashlib.sha256("|".join(str(value or "") for value in key).encode("utf-8")).hexdigest()[:10]
         series_id = f"OBS_TS_{suffix}"
         if series_id in existing_series:
@@ -103,11 +177,40 @@ def enrich_report_data(report_data, observations, sufficiency):
             "series_id": series_id,
             "label": f"{entity} · {METRIC_LABELS.get(metric_id, metric_id)}",
             "chart_type": "LINE",
-            "points": [_metric_payload(periods[period]) for period in sorted(periods)],
-            "source_observation_ids": [periods[period].get("observation_id") for period in sorted(periods)],
+            "points": [_metric_payload(periods[period]) for period in sorted(periods, key=lambda value: period_key(periods[value]))],
+            "source_observation_ids": [periods[period].get("observation_id") for period in sorted(periods, key=lambda value: period_key(periods[value]))],
             "comparability_note": "Only identical metric definition, unit, currency, geography, period type and entity scope are joined.",
         })
         existing_series.add(series_id)
+
+    # Build a comparable segment cohort from numeric structured observations.
+    # The chart is generated only when period, metric label, unit, currency and
+    # geography align; qualitative prose is never parsed for hidden numbers.
+    segment_rows = [
+        row for row in numeric_usable
+        if row.get("dataset_id") in {"market_segments", "business_segments", "product_segments"}
+    ]
+    segment_cohorts = defaultdict(list)
+    for row in segment_rows:
+        segment_cohorts[(
+            row.get("metric"), row.get("unit"), row.get("currency"),
+            row.get("geography"), row.get("period"), row.get("period_type"),
+        )].append(row)
+    if segment_cohorts:
+        cohort_key, cohort = max(
+            segment_cohorts.items(),
+            key=lambda item: (len({row.get("entity") for row in item[1]}), len(item[1]), item[0][4] or ""),
+        )
+        rows_by_entity = defaultdict(list)
+        for row in cohort:
+            rows_by_entity[row.get("entity")].append(row)
+        for entity, rows in sorted(rows_by_entity.items(), key=lambda item: str(item[0])):
+            suffix = hashlib.sha256("|".join(str(value or "") for value in (entity, *cohort_key)).encode("utf-8")).hexdigest()[:10]
+            report_data["market_segments"].append({
+                "segment_id": f"OBS_SEG_{suffix}",
+                "label": entity or "未命名细分",
+                "metrics": [_metric_payload(row) for row in rows],
+            })
     # Generate comparable medians only when at least two entities share one strict comparability group.
     groups = defaultdict(list)
     for row in usable:

@@ -107,6 +107,64 @@ AVIATION_VOCABULARY = {
     ),
 }
 
+FOOD_BEVERAGE_VOCABULARY = {
+    "industry_definition": _vocab(
+        ("industry definition", "freshly made beverages definition"),
+        zh=("行业定义", "现制饮品 定义 范围"),
+        sources=("prospectus", "industry association", "government standard"),
+    ),
+    "market_size": _vocab(
+        ("market size", "GMV", "retail sales"),
+        zh=("市场规模", "GMV", "零售额"),
+        sources=("prospectus", "government statistics", "industry association"),
+    ),
+    "historical_growth": _vocab(
+        ("historical market growth", "GMV time series", "historical CAGR"),
+        zh=("历史市场规模", "GMV 历年", "历史复合增长率"),
+        sources=("prospectus", "annual report", "industry report"),
+    ),
+    "forecast_growth": _vocab(
+        ("market forecast", "forecast CAGR", "GMV forecast"),
+        zh=("市场预测", "预测复合增长率", "GMV 预测"),
+        sources=("prospectus", "research institute", "industry report"),
+    ),
+    "market_segments": _vocab(
+        ("market segments", "segment GMV", "coffee tea segment share"),
+        zh=("市场细分", "细分市场 GMV", "咖啡 茶饮 细分占比"),
+        sources=("prospectus", "annual report", "industry association"),
+    ),
+    "major_players": _vocab(
+        ("major players", "market share", "store network"),
+        zh=("主要企业", "市场份额", "门店网络"),
+        sources=("prospectus", "annual report", "official announcement"),
+    ),
+    "concentration": _vocab(
+        ("market concentration", "top five market share", "CR5"),
+        zh=("市场集中度", "前五市场份额", "CR5"),
+        sources=("prospectus", "industry report"),
+    ),
+    "value_chain": _vocab(
+        ("industry value chain", "franchise supply chain", "store economics"),
+        zh=("行业价值链", "加盟供应链", "门店经营链条"),
+        sources=("prospectus", "annual report", "industry association"),
+    ),
+    "profit_pools": _vocab(
+        ("profit pool", "gross margin", "franchisee economics"),
+        zh=("利润池", "毛利率", "加盟商盈利模型"),
+        sources=("annual report", "prospectus", "investor presentation"),
+    ),
+    "technology_trends": _vocab(
+        ("digital ordering", "supply chain technology", "store automation"),
+        zh=("数字化点单", "供应链技术", "门店自动化"),
+        sources=("annual report", "official announcement", "industry report"),
+    ),
+    "demand_drivers": _vocab(
+        ("consumer demand drivers", "consumption frequency", "customer segments"),
+        zh=("消费需求驱动", "消费频次", "客户结构"),
+        sources=("consumer survey", "prospectus", "industry report"),
+    ),
+}
+
 ENERGY_VOCABULARY = {
     "market_size": _vocab(
         ("installed photovoltaic capacity", "solar electricity generation", "annual net additions"),
@@ -146,6 +204,12 @@ ENERGY_VOCABULARY = {
 
 ENTITY_PROFILES = (
     {
+        "tokens": ("咖啡及茶饮", "咖啡和茶饮", "coffee and tea", "freshly made beverage"),
+        "names": ("China freshly made coffee and tea market", "China freshly made beverage market"),
+        "local_names": ("中国现制咖啡及茶饮市场", "中国现制饮品市场"),
+        "domains": (),
+    },
+    {
         "tokens": ("nintendo switch 2", "任天堂 switch 2", "任天堂switch 2"),
         "names": ("Nintendo Switch 2", "Nintendo Co., Ltd."),
         "local_names": ("Nintendo Switch 2", "任天堂 Switch 2"),
@@ -182,6 +246,14 @@ def route_industry(industry):
         if any(token in text for token in tokens):
             return route
     return "generic"
+
+
+def _scope_industry_text(scope):
+    """Infer routing from the full Scope when industry is still 自动判断."""
+    return " ".join(
+        str(scope.get(key) or "")
+        for key in ("industry", "topic", "objective", "target_entity")
+    )
 
 
 def entity_search_profile(scope, entity=None):
@@ -231,6 +303,8 @@ def dataset_vocabulary(dataset_id, industry):
     dataset_id = str(dataset_id or "")
     route = route_industry(industry)
     base = AVIATION_VOCABULARY.get(dataset_id) if route == "aviation" else None
+    if base is None and route == "food_beverage":
+        base = FOOD_BEVERAGE_VOCABULARY.get(dataset_id)
     if base is None and route == "energy":
         base = ENERGY_VOCABULARY.get(dataset_id)
     if base is None:
@@ -264,19 +338,20 @@ def _clean_query(query, forbidden):
 
 def build_dataset_queries(scope, dataset_id, *, entity=None, languages=None, limit=5):
     """Build short, auditable queries from dataset and industry vocabulary."""
-    vocabulary = dataset_vocabulary(dataset_id, scope.get("industry"))
+    industry_text = _scope_industry_text(scope)
+    vocabulary = dataset_vocabulary(dataset_id, industry_text)
     profile = entity_search_profile(scope, entity)
     names = profile["names"]
     local_names = profile["local_names"]
     domains = profile["domains"]
     current_year, prior_year = _years(scope)
-    languages = tuple(languages or ("en", "de" if route_industry(scope.get("industry")) == "aviation" else "zh"))
+    languages = tuple(languages or ("en", "de" if route_industry(industry_text) == "aviation" else "zh"))
     english = vocabulary.english_keywords
     local = vocabulary.local_keywords.get("de" if "de" in languages else "zh", ()) or english
     queries = []
 
     # High-value aviation/Lufthansa templates keep metric pairs short and preserve official domains.
-    route = route_industry(scope.get("industry"))
+    route = route_industry(industry_text)
     if route == "automotive" and "XPeng" in names and dataset_id in {"market_size", "prices", "regulation", "customer_demand"}:
         automotive_queries = {
             "market_size": [("de", "XPeng Deutschland Zulassungen KBA Neuzulassungen Elektroauto")],
@@ -322,9 +397,10 @@ def build_dataset_queries(
     missing_field=None, missing_metric=None, period=None, geography=None,
     source_type=None, preferred_domains=None, gap_id=None,
 ):
-    vocabulary = dataset_vocabulary(dataset_id, scope.get("industry"))
+    industry_text = _scope_industry_text(scope)
+    vocabulary = dataset_vocabulary(dataset_id, industry_text)
     profile = entity_search_profile(scope, entity)
-    route = route_industry(scope.get("industry"))
+    route = route_industry(industry_text)
     current_year, prior_year = _years(scope)
     period = str(period or prior_year)
     languages = tuple(languages or (("de", "en", "zh") if "Germany" in compact_geographies(scope) else ("en", "zh")))
@@ -392,12 +468,16 @@ def build_dataset_queries(
         metric_one = english[0] if english else "official data"
         metric_two = english[1] if len(english) > 1 else metric_one
         local_metric = local[0] if local else metric_one
+        preferred_source = source_type or (
+            vocabulary.preferred_source_types[0]
+            if vocabulary.preferred_source_types else "official report"
+        )
         if domains:
-            queries.append(("en", domains[0], f'site:{domains[0]} "{name}" "{metric_one}" {period}', "", source_type or "official"))
+            queries.append(("en", domains[0], f'site:{domains[0]} "{name}" "{metric_one}" {period}', "", preferred_source))
         queries.extend([
-            ("en", "", f'"{name}" annual report {period} "{metric_one}"', "", source_type or "annual report"),
-            (local_key, "", f'"{local_name}" {local_metric} {period}', "", source_type or "local official source"),
-            ("en", "", f'filetype:pdf "{name}" {metric_one} {metric_two} {period}', "PDF", source_type or "report"),
+            ("en", "", f'"{name}" {preferred_source} {period} "{metric_one}"', "", preferred_source),
+            (local_key, "", f'"{local_name}" {local_metric} {period}', "", preferred_source),
+            ("en", "", f'filetype:pdf "{name}" {metric_one} {metric_two} {period}', "PDF", preferred_source),
         ])
 
     output, seen = [], set()

@@ -12,33 +12,35 @@ export function TimeSeriesChart({ series }: { series: TimeSeries[] }) {
   const option = useMemo(() => {
     if (!usable) return null;
     const points = usable.points.filter((point) => validateMetric(point).length === 0);
+    const isFuture = (valueType: string) => ["FORECAST", "SCENARIO"].includes(valueType);
+    const isTarget = (valueType: string) => valueType === "TARGET";
+    const lastObservedIndex = points.reduce((last, point, index) => !isFuture(point.value_type) && !isTarget(point.value_type) ? index : last, -1);
+    const actualData = points.map((point) => !isFuture(point.value_type) && !isTarget(point.value_type) ? { value: point.value, metric: point } : null);
+    const forecastData = points.map((point, index) => {
+      if (isFuture(point.value_type) || index === lastObservedIndex) return { value: point.value, metric: point };
+      return null;
+    });
+    const targetData = points.map((point) => isTarget(point.value_type) ? { value: point.value, metric: point } : null);
     return {
       tooltip: {
         trigger: "axis" as const,
         formatter: (items: Array<{ data: { value: number; metric: typeof points[number] } }>) => {
-          const item = items[0]?.data;
-          if (!item) return "";
-          const m = item.metric;
-          return `<strong>${m.label}</strong><br/>${m.period}: ${item.value} ${m.unit ?? ""} ${m.currency ?? ""}<br/>${m.geography}<br/>${m.value_type} / ${m.temporal_status}<br/>${m.source_fact_ids.join(", ")} · Grade ${m.source_grade}`;
+          const unique = [...new Map(items.filter((item) => item.data?.metric).map((item) => [item.data.metric.metric_id, item.data])).values()];
+          return unique.map((item) => {
+            const m = item.metric;
+            return `<strong>${m.label}</strong><br/>${m.period}: ${item.value} ${m.unit ?? ""} ${m.currency ?? ""}<br/>${m.geography}<br/>${m.value_type} / ${m.temporal_status}<br/>${m.source_fact_ids.join(", ")} · Grade ${m.source_grade}`;
+          }).join("<br/><br/>");
         },
       },
-      legend: { data: [usable.label, "目标"] },
+      legend: { data: ["实际/历史", "预测/情景", "目标"] },
       grid: { left: 52, right: 24, top: 44, bottom: 52 },
       xAxis: { type: "category" as const, data: points.map((point) => point.period), name: "期间" },
       yAxis: { type: "value" as const, name: points[0]?.unit ?? "" },
-      series: [{
-        name: usable.label,
-        type: usable.chart_type === "BAR" ? "bar" : "line",
-        smooth: false,
-        symbolSize: 9,
-        data: points.map((point) => ({
-          value: point.value,
-          metric: point,
-          itemStyle: { color: valueTypeStyles[point.value_type].color },
-          lineStyle: { type: valueTypeStyles[point.value_type].lineType },
-          symbol: point.value_type === "TARGET" ? "diamond" : "circle",
-        })),
-      }],
+      series: [
+        { name: "实际/历史", type: usable.chart_type === "BAR" ? "bar" : "line", smooth: false, symbolSize: 8, connectNulls: false, lineStyle: { type: "solid", width: 3 }, itemStyle: { color: valueTypeStyles.ACTUAL.color }, data: actualData },
+        { name: "预测/情景", type: "line", smooth: false, symbolSize: 8, connectNulls: false, lineStyle: { type: "dashed", width: 3 }, itemStyle: { color: valueTypeStyles.FORECAST.color }, data: forecastData },
+        { name: "目标", type: "scatter", symbol: "diamond", symbolSize: 13, itemStyle: { color: valueTypeStyles.TARGET.color }, data: targetData },
+      ],
     };
   }, [usable]);
   if (!usable || !option) return <EmptyState reason="缺少至少两个口径完整、可追溯的时间点。" />;

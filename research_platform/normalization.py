@@ -146,7 +146,12 @@ def normalize_source(source):
     item["geography"] = str(item.get("geography") or "")
     item["is_primary_source"] = bool(item.get("is_primary_source"))
     item["datasets_supported"] = list(dict.fromkeys(str(x) for x in item.get("datasets_supported") or []))
-    status = str(item.get("access_status") or "SUCCESS").upper()
+    status = str(item.get("access_status") or "SUCCESS").upper().replace(" ", "_")
+    status = {
+        "OK": "SUCCESS", "OPENED": "SUCCESS", "ACCESSED": "SUCCESS",
+        "ACCEPTED": "SUCCESS", "EXTRACTED": "SUCCESS", "COMPLETED": "SUCCESS",
+        "LOGIN": "LOGIN_REQUIRED", "ROBOTS": "ROBOTS_BLOCKED",
+    }.get(status, status)
     allowed = {"SUCCESS", "PAYWALL", "LOGIN_REQUIRED", "CAPTCHA", "ROBOTS_BLOCKED", "NOT_FOUND", "NETWORK_ERROR", "REJECTED"}
     item["access_status"] = status if status in allowed else "REJECTED"
     item["access_issue"] = str(item.get("access_issue") or "")
@@ -205,7 +210,11 @@ def normalize_observation(observation, source_lookup=None, industry=None):
     item["as_of_date"] = normalize_date(item.get("as_of_date")) or item["observed_at"]
     value_type = str(item.get("value_type") or "UNKNOWN").upper()
     item["value_type"] = value_type if value_type in {"ACTUAL", "HISTORICAL", "ESTIMATE", "FORECAST", "SCENARIO", "TARGET", "PROXY", "UNKNOWN"} else "UNKNOWN"
-    grade = str(item.get("source_grade") or "UNKNOWN").upper()
+    inherited_grade = (
+        source_lookup.get(item["source_id"], {}).get("source_grade")
+        if source_lookup and item["source_id"] in source_lookup else None
+    )
+    grade = str(item.get("source_grade") or inherited_grade or "UNKNOWN").upper()
     if grade in {"A", "B", "C", "D", "E"}:
         grade = f"GRADE_{grade}"
     item["source_grade"] = grade if grade in {"GRADE_A", "GRADE_B", "GRADE_C", "GRADE_D", "GRADE_E"} else "UNKNOWN"

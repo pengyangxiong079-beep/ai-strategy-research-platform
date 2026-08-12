@@ -150,19 +150,44 @@ FACT_RESULT_PATTERN = re.compile(
     r"(VERIFIED|PARTIAL|UNSUPPORTED|OUTDATED|SUPERSEDED)(?:\*\*)?",
     re.IGNORECASE,
 )
+_FACT_FIELD_NAMES = (
+    r"输入范围|原始事实|核验结果|来源|修改建议|source_grade|as_of_date|"
+    r"geography|unit|currency|original_claim|corrected_claim"
+)
+_FACT_FIELD_BOUNDARY = (
+    rf"(?=(?:\s*[；;]\s*|\s*\n+\s*[-*]?\s*)(?:{_FACT_FIELD_NAMES})"
+    r"(?:\*\*)?\s*[：:]|\s*\Z)"
+)
+
+
+def _fact_field_pattern(label, value=r".+?", flags=0):
+    return re.compile(
+        rf"{label}(?:\*\*)?\s*[：:]\s*({value}){_FACT_FIELD_BOUNDARY}",
+        re.IGNORECASE | re.DOTALL | flags,
+    )
+
+
 FACT_FIELD_PATTERNS = {
     "输入范围": re.compile(r"输入范围(?:\*\*)?\s*[：:]\s*(RESEARCH|REVIEW)\b", re.IGNORECASE),
-    "原始事实": re.compile(r"原始事实(?:\*\*)?\s*[：:]\s*(.+)"),
-    "来源": re.compile(r"来源(?:\*\*)?\s*[：:]\s*(.+)"),
-    "修改建议": re.compile(r"修改建议(?:\*\*)?\s*[：:]\s*(.+)"),
+    # Stop at the next named field instead of the next semicolon. This keeps
+    # meaningful semicolons inside one claim for the atomicity rule while
+    # preventing later metadata fields from being swallowed.
+    "原始事实": _fact_field_pattern("原始事实"),
+    "来源": _fact_field_pattern("来源"),
+    "修改建议": _fact_field_pattern("修改建议"),
     "source_grade": re.compile(r"source_grade(?:\*\*)?\s*[：:]\s*(A|B|C|D|N/A)\b", re.IGNORECASE),
-    "as_of_date": re.compile(r"as_of_date(?:\*\*)?\s*[：:]\s*(.+)", re.IGNORECASE),
-    "geography": re.compile(r"geography(?:\*\*)?\s*[：:]\s*(.+)", re.IGNORECASE),
-    "unit": re.compile(r"unit(?:\*\*)?\s*[：:]\s*(.+)", re.IGNORECASE),
-    "currency": re.compile(r"currency(?:\*\*)?\s*[：:]\s*(.+)", re.IGNORECASE),
-    "original_claim": re.compile(r"original_claim(?:\*\*)?\s*[：:]\s*(.+)", re.IGNORECASE),
-    "corrected_claim": re.compile(r"corrected_claim(?:\*\*)?\s*[：:]\s*(.+)", re.IGNORECASE),
+    "as_of_date": _fact_field_pattern("as_of_date"),
+    "geography": _fact_field_pattern("geography"),
+    "unit": _fact_field_pattern("unit"),
+    "currency": _fact_field_pattern("currency"),
+    "original_claim": _fact_field_pattern("original_claim"),
+    "corrected_claim": _fact_field_pattern("corrected_claim"),
 }
+EVIDENCE_GAP_PATTERN = re.compile(
+    r"数据(?:为|是|仍为)?(?:缺口|不足|空缺)|证据(?:缺口|不足|缺失)|缺少(?:数据|来源|可比)|"
+    r"未(?:发现|获得|找到|获).{0,12}(?:数据|来源|证据|支持)|无法(?:核验|支持|确认)",
+    re.IGNORECASE,
+)
 FACT_TAG_PATTERN = re.compile(
     r"【\s*事实\s*】|\[\s*事实\s*\]|\*\*\s*事实\s*\*\*|"
     r"^\s*[-*]?\s*事实\s*[：:]",
@@ -590,7 +615,7 @@ def parse_fact_checks(text):
     return entries, duplicates
 
 
-def write_fact_check_data(fact_text, output_folder):
+def write_fact_check_data(fact_text, output_folder, *, raw_fact_text=None):
     """Create local structured Fact data from the verifier's canonical records."""
     entries, _ = parse_fact_checks(fact_text)
     facts = []
@@ -627,9 +652,10 @@ def write_fact_check_data(fact_text, output_folder):
             }
         )
     observation_verifications = []
+    verification_source = raw_fact_text or fact_text
     verification_match = re.search(
         r"<observation_verification_json>\s*(.*?)\s*</observation_verification_json>",
-        fact_text,
+        verification_source,
         re.IGNORECASE | re.DOTALL,
     )
     if verification_match:
@@ -647,6 +673,39 @@ def write_fact_check_data(fact_text, output_folder):
             )
         except (ValueError, TypeError):
             observation_verifications = []
+    # Canonical V2 claims are the primary source of Observation lineage.  The
+    # human-readable <fact_check> block is deliberately a projection and may
+    # not repeat observation_id for every claim.
+    canonical_claims = (
+        _read_optional_json(Path(output_folder) / "fact_check/verified_claims.json")
+        or {}
+    ).get("claims", [])
+    canonical_verifications = []
+    for claim in canonical_claims:
+        fact_id = str(claim.get("display_id") or "").upper()
+        for observation_id in claim.get("observation_ids") or []:
+            canonical_verifications.append(
+                {
+                    "observation_id": observation_id,
+                    "fact_id": fact_id if F_ID_PATTERN.fullmatch(fact_id) else None,
+                    "verification_status": claim.get("verification_status") or "NOT_CHECKED",
+                    "temporal_status": claim.get("temporal_status") or "UNKNOWN",
+                    "source_ids": list(claim.get("source_ids") or []),
+                    "source_grade": claim.get("source_grade_max") or "UNKNOWN",
+                }
+            )
+    if canonical_verifications:
+        canonical_ids = {
+            str(item.get("observation_id")) for item in canonical_verifications
+            if item.get("observation_id")
+        }
+        observation_verifications = [
+            *canonical_verifications,
+            *[
+                item for item in observation_verifications
+                if str(item.get("observation_id") or "") not in canonical_ids
+            ],
+        ]
     for fact in facts:
         observation_id = fact.get("observation_id")
         if observation_id and observation_id != "N/A" and not any(
@@ -1704,6 +1763,7 @@ def validate_outputs(
 
     incomplete_fact_entries = []
     missing_fact_sources = []
+    internal_gap_records = []
     invalid_fact_results = []
     invalid_source_grades = []
     verified_low_grade_sources = []
@@ -1722,7 +1782,20 @@ def validate_outputs(
         if entry["result"] in {"VERIFIED", "PARTIAL"}:
             source_value = entry["fields"]["来源"]
             if not MARKDOWN_LINK_PATTERN.search(source_value):
-                missing_fact_sources.append(fact_id)
+                gap_text = " ".join(
+                    entry["fields"].get(field, "")
+                    for field in ("原始事实", "original_claim", "修改建议", "corrected_claim")
+                )
+                is_internal_gap = (
+                    entry["fields"].get("输入范围") == "REVIEW"
+                    and entry["result"] == "PARTIAL"
+                    and entry["fields"].get("source_grade", "").upper() == "N/A"
+                    and EVIDENCE_GAP_PATTERN.search(gap_text)
+                )
+                if is_internal_gap:
+                    internal_gap_records.append(fact_id)
+                else:
+                    missing_fact_sources.append(fact_id)
         grade = entry["fields"].get("source_grade", "").upper()
         if has_scope and grade not in {"A", "B", "C", "D", "N/A"}:
             invalid_source_grades.append(fact_id)
@@ -1757,7 +1830,11 @@ def validate_outputs(
             checks,
             "Fact Check证据链接",
             "PASS",
-            "所有VERIFIED/PARTIAL记录均提供来源链接",
+            "所有外部VERIFIED/PARTIAL事实均提供来源链接"
+            + (
+                f"；{len(internal_gap_records)}条Review内部证据缺口说明按非外部事实处理"
+                if internal_gap_records else ""
+            ),
         )
 
     if invalid_source_grades or verified_low_grade_sources:
@@ -2993,8 +3070,27 @@ def run_local_quality_check(output_folder):
     """Execute validate_outputs for one run and return rich local-only results."""
     output_folder = Path(output_folder)
     files = workflow_files(output_folder)
-    if files["fact"].is_file() and not files["fact_data"].is_file():
+    # Re-project canonical claims whenever they exist. This makes a local-only
+    # Revision capable of repairing legacy runs where the Markdown projection
+    # was saved but Observation lineage was lost after </fact_check>.
+    if files["fact"].is_file() and (
+        not files["fact_data"].is_file()
+        or (output_folder / "fact_check/verified_claims.json").is_file()
+    ):
         write_fact_check_data(files["fact"].read_text(encoding="utf-8"), output_folder)
+    if files["report_data"].is_file():
+        try:
+            report_data_payload = json.loads(files["report_data"].read_text(encoding="utf-8"))
+            context = _data_context(output_folder)
+            report_data_payload = enrich_report_data(
+                report_data_payload, context["observations"], context["sufficiency"]
+            )
+            validate_report_data(report_data_payload)
+            atomic_write_json(files["report_data"], report_data_payload)
+        except (OSError, ValueError, TypeError, ReportDataValidationError):
+            # validate_outputs will record the precise REPORT_DATA_SCHEMA issue;
+            # a malformed optional dataset must not crash the whole local check.
+            pass
     quality_status, quality_file = validate_outputs(
         files["research"],
         files["review"],
@@ -3814,8 +3910,8 @@ def run_research_phase(
 8. 是否覆盖selected_template的必需章节和行业专属指标，框架选择是否符合分析目的。
 
 输出要求：
-- 先输出严格JSON区块：<review_issues_json>{{"schema_version":"2.0","issues":[{{"review_id":"","title":"","severity":"ERROR|WARNING","claim_id":"","section_id":"","dataset_id":"","reason":"","suggested_action":"","status":"OPEN"}}]}}</review_issues_json>；
-- 再把人类可读审查记录放入<review_notes>...</review_notes>；review_id使用稳定ID，R1等只作为display_id；
+ - 先输出严格JSON区块：<review_issues_json>{{"schema_version":"2.0","issues":[{{"review_id":"R1","severity":"ERROR|WARNING|INFO","category":"coverage|evidence|logic|freshness|scope|structure","issue":"","evidence":"","required_action":"","status":"OPEN"}}]}}</review_issues_json>；
+ - 再把人类可读审查记录放入<review_notes>...</review_notes>；review_id必须严格使用连续且唯一的R1、R2、R3……，不得使用范围编号；
 - 每个重要问题使用唯一编号R1、R2、R3……；
 - 对每个问题说明问题内容、证据缺口及具体修改建议；
 - Review中新增的任何客观陈述都必须单独成段并标记“【新增事实】”，包括但不限于
@@ -3829,7 +3925,8 @@ def run_research_phase(
 """
             )
             raw_review_text = get_final_response(review_result, current_stage)
-            persist_review_model(output_folder, raw_review_text)
+            if not persist_review_model(output_folder, raw_review_text):
+                raise RuntimeError("Review Agent未返回可验证的02_review_notes.json结构化契约")
             review_text = extract_text_block(raw_review_text, "review_notes") or raw_review_text
             files["review"].write_text(review_text, encoding="utf-8")
             add_stage_duration(
@@ -3946,7 +4043,7 @@ def run_research_phase(
             persist_fact_model(output_folder, raw_fact_text)
             fact_text = extract_text_block(raw_fact_text, "fact_check") or raw_fact_text
             files["fact"].write_text(fact_text, encoding="utf-8")
-            write_fact_check_data(fact_text, output_folder)
+            write_fact_check_data(fact_text, output_folder, raw_fact_text=raw_fact_text)
             add_stage_duration(
                 output_folder,
                 "fact_check",

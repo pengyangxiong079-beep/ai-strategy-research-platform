@@ -15,6 +15,7 @@ import { DataGapPanel } from "./DataGapPanel";
 import { RevisionComparison } from "./RevisionComparison";
 import { EmptyState } from "./EmptyState";
 import { AdaptivePriceChart } from "./AdaptivePriceChart";
+import { DataCoverageChart, EntityEvidenceChart, ObservationCoverageChart } from "./EvidenceCoverageCharts";
 import {
   GeographicMap, HorizontalBarChart, OpportunityMatrix, PortfolioMatrix,
   InitiativeRoadmap, PositioningMatrix, QualityIssuePanel, RecommendationsPanel,
@@ -51,7 +52,10 @@ export function WidgetRenderer({ spec, view, locale, catalog, current }: Props) 
     InitiativeRoadmap: () => <InitiativeRoadmap initiatives={view.initiatives} />,
     RecommendationsPanel: () => <RecommendationsPanel recommendations={view.recommendations} />,
     EvidenceStatusChart: () => <EvidenceStatusChart summary={view.evidence_summary} />,
-    SourceGradeChart: () => <SourceGradeChart report={view.report} />,
+    SourceGradeChart: () => <SourceGradeChart report={view.report} observations={view.observations} />,
+    DataCoverageChart: () => <DataCoverageChart coverage={view.data_coverage} />,
+    ObservationCoverageChart: () => <ObservationCoverageChart observations={view.observations} />,
+    EntityEvidenceChart: () => <EntityEvidenceChart observations={view.observations} />,
     QualityIssuePanel: () => <QualityIssuePanel issues={(view.quality.quality_issues ?? []) as Array<Record<string, unknown>>} />,
     DataGapPanel: () => <DataGapPanel gaps={view.data_gaps} excluded={view.excluded} />,
     RevisionComparison: () => <RevisionComparison catalog={catalog} current={current} />,

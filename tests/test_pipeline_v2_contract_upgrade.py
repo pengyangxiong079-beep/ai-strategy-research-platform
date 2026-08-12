@@ -9,6 +9,7 @@ from pipeline_v2.report_protocol import hash_consistent, report_data_payload, re
 from pipeline_v2.review import validate_review_notes
 from pipeline_v2.revision import RevisionExecutor, plan_revision
 from pipeline_v2.service import PipelineV2Service
+from pipeline_v2.agent_outputs import persist_review_model
 from research_platform.data_acquisition.search_vocabulary import build_dataset_queries
 from research_platform.report_adapter import enrich_report_data
 from tests.fakes.fake_agent_registry import FakeAgentRegistry
@@ -45,6 +46,18 @@ def test_review_range_id_is_rejected_as_one_invalid_id():
         "required_action": "split into atomic issues", "status": "OPEN",
     }])
     assert [row["rule_id"] for row in errors] == ["REVIEW_ID_RANGE_FORBIDDEN"]
+
+
+def test_legacy_review_agent_fields_are_normalized_to_canonical_contract(tmp_path):
+    raw = '<review_issues_json>{"schema_version":"2.0","issues":[{"review_id":"legacy_hash","title":"缺少证据","severity":"WARNING","dataset_id":"market_size","reason":"只有单一来源","suggested_action":"补充交叉验证","status":"OPEN"}]}</review_issues_json>'
+    payload = persist_review_model(tmp_path, raw)
+    assert payload is not None
+    issue = json.loads((tmp_path / "02_review_notes.json").read_text(encoding="utf-8"))["issues"][0]
+    assert issue == {
+        "review_id": "R1", "severity": "WARNING", "category": "market_size",
+        "issue": "缺少证据", "evidence": "只有单一来源",
+        "required_action": "补充交叉验证", "status": "OPEN",
+    }
 
 
 def test_review_gate_retries_once_then_persists_canonical_json(tmp_path):
@@ -123,6 +136,52 @@ def test_time_series_preserves_periods_with_strict_metric_partitioning():
     assert result["_meta"]["coverage_periods"] == ["2024", "2025"]
     assert result["_meta"]["exported_time_series_periods"] == ["2024", "2025"]
     assert result["_meta"]["time_series_exclusions"] == []
+
+
+def test_verified_observations_generate_professional_industry_core_views():
+    observations = []
+    for period, value, dataset, value_type in (
+        ("2020", 274.7, "market_size", "HISTORICAL"),
+        ("2021", 360.5, "historical_growth", "HISTORICAL"),
+        ("2022", 421.3, "historical_growth", "HISTORICAL"),
+        ("2023", 517.5, "market_size", "HISTORICAL"),
+        ("2024", 627.9, "forecast_growth", "FORECAST"),
+        ("2025", 746.4, "forecast_growth", "FORECAST"),
+        ("2026", 876.2, "forecast_growth", "FORECAST"),
+        ("2027", 1016.8, "forecast_growth", "FORECAST"),
+        ("2028", 1163.4, "forecast_growth", "FORECAST"),
+    ):
+        observations.append({
+            "observation_id": f"O_{period}", "dataset_id": dataset,
+            "entity": "中国现制饮品市场", "entity_scope": "MARKET",
+            "metric": "GMV", "metric_id": "freshly_made_drinks_gmv",
+            "metric_definition": "中国现制饮品GMV", "value": value,
+            "unit": "CNY_billion", "currency": "CNY", "geography": "China",
+            "period": period, "period_type": "CALENDAR_YEAR", "channel": "ALL",
+            "comparability_group": "CG_GMV", "verification_status": "SUPPORTED",
+            "source_fact_ids": [f"F{int(period) - 2019}"], "source_grade": "GRADE_C",
+            "confidence": "HIGH", "value_type": value_type,
+        })
+    for suffix, entity, value, fact_id in (("TEA", "中国现制茶饮市场", 258.5, "F20"), ("COFFEE", "中国现制咖啡市场", 172.1, "F21")):
+        observations.append({
+            "observation_id": f"O_{suffix}", "dataset_id": "market_segments",
+            "entity": entity, "entity_scope": "MARKET", "metric": "GMV",
+            "metric_id": f"{suffix.lower()}_gmv", "metric_definition": "细分市场GMV",
+            "value": value, "unit": "CNY_billion", "currency": "CNY",
+            "geography": "China", "period": "2023", "period_type": "CALENDAR_YEAR",
+            "channel": "ALL", "comparability_group": "CG_SEGMENT_GMV",
+            "verification_status": "SUPPORTED", "source_fact_ids": [fact_id],
+            "source_grade": "GRADE_C", "confidence": "HIGH", "value_type": "HISTORICAL",
+        })
+    result = enrich_report_data(
+        {"kpis": [], "data_gaps": [], "time_series": [], "market_segments": [], "competitor_comparisons": []},
+        observations, {"datasets": []},
+    )
+    assert len(result["kpis"]) == 4
+    assert len(result["time_series"]) == 1
+    assert len(result["time_series"][0]["points"]) == 9
+    assert {point["value_type"] for point in result["time_series"][0]["points"]} == {"ACTUAL", "FORECAST"}
+    assert {item["label"] for item in result["market_segments"]} == {"中国现制茶饮市场", "中国现制咖啡市场"}
 
 
 def test_initial_snapshot_revision_semantics_and_rerun_stages(tmp_path):

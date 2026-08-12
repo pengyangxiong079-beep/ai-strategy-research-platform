@@ -10,9 +10,8 @@ export const industryAnalysisTemplate = finalizeTemplate({
   pages: [
     { id: "industry-overview", label: "行业总览", purpose: "界定行业并解释规模与增长。", widgets: [widget("kpis", "KpiSummary", "行业关键指标", "metrics", 1, true), widget("trend", "TimeSeriesChart", "市场规模趋势", "time_series", 2, true)] },
     { id: "market-structure", label: "市场结构", purpose: "识别增长集中的细分和利润池。", widgets: [widget("segments", "StackedCompositionChart", "细分构成", "segments", 1, true), widget("profit-pool", "HorizontalBarChart", "利润池", "comparisons", 2)] },
-    { id: "competitive-landscape", label: "竞争格局", purpose: "比较主要参与者与集中程度。", widgets: [widget("players", "DotComparisonChart", "参与者比较", "comparisons", 1, true), widget("position", "PositioningMatrix", "参与者定位", "matrices", 2)] },
+    { id: "competitive-landscape", label: "竞争格局", purpose: "比较主要参与者与集中程度；证据不足时明确降级为公开证据覆盖。", widgets: [widget("players", "DotComparisonChart", "参与者可比指标", "comparisons", 1, false), widget("entity-evidence", "EntityEvidenceChart", "主要实体公开证据覆盖", "observations", 2, true), widget("position", "PositioningMatrix", "参与者定位", "matrices", 3)] },
     { id: "value-chain", label: "价值链", purpose: "解释价值创造与利润分布。", widgets: [widget("value-chain", "ValueChainDiagram", "行业价值链", "strategic_options", 1, true)] },
-    { id: "trends-scenarios", label: "趋势与情景", purpose: "呈现驱动因素、风险和未来情景。", widgets: [widget("risk", "RiskMatrix", "行业风险", "risks", 1), widget("scenario", "ScenarioChart", "行业情景", "scenarios", 2, true)] },
+    { id: "trends-scenarios", label: "趋势与情景", purpose: "呈现驱动因素、风险和未来情景。", widgets: [widget("risk", "RiskMatrix", "行业风险", "risks", 1), widget("scenario", "ScenarioChart", "行业情景", "scenarios", 2, false)] },
   ],
 });
-

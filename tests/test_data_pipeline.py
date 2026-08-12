@@ -14,6 +14,7 @@ from research_platform.normalization import (
     normalize_unit,
     normalize_observation,
     canonicalize_entity,
+    normalize_source,
 )
 from research_platform.pipeline import (
     apply_observation_verification,
@@ -87,6 +88,63 @@ class DataPipelineTests(unittest.TestCase):
         query_text = "\n".join(item["query"] for item in plan["queries"])
         self.assertIn("KBA Neuzulassungen", query_text)
         self.assertIn("XPeng Deutschland Preise", query_text)
+
+    def test_scope_topic_routes_auto_detected_food_beverage_queries(self):
+        scope = {
+            "analysis_type": "行业分析", "topic": "中国咖啡及茶饮行业",
+            "industry": "自动判断", "geography": "中国", "analysis_date": "2026-08-09",
+        }
+        queries = build_dataset_queries(scope, "market_size", limit=5)
+        query_text = "\n".join(item["query"] for item in queries)
+        self.assertIn("China freshly made coffee and tea market", query_text)
+        self.assertTrue("market size" in query_text or "市场规模" in query_text)
+        self.assertNotIn("price data", query_text.lower())
+
+    def test_successful_source_synonyms_and_execution_evidence_are_normalized(self):
+        self.assertEqual(normalize_source({"access_status": "OPENED"})["access_status"], "SUCCESS")
+        scope = CASES["tea_competitor"]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir)
+            initialize_data_pipeline(output, scope)
+            payload = json.loads(json.dumps(TEA_COMPETITOR_ACQUISITION))
+            payload["sources"] = [{**row, "access_status": "ACCEPTED"} for row in payload["sources"]]
+            payload["search_log_entries"] = [{
+                "query": "official menu", "language": "zh",
+                "opened_sources": [payload["sources"][0]["url"]],
+                "accepted_sources": [payload["sources"][0]["url"]],
+                "extracted_observation_count": 1,
+            }]
+            processed = process_acquisition_response(output, scope, payload)
+            self.assertTrue(all(row["access_status"] == "SUCCESS" for row in processed["sources"]))
+            self.assertEqual(processed["search_log"]["entries"][0]["execution_status"], "COMPLETED")
+
+    def test_exact_required_metric_reconciles_misclassified_dataset(self):
+        scope = {
+            "analysis_type": "行业分析", "topic": "中国咖啡及茶饮行业",
+            "industry": "自动判断", "geography": "中国", "analysis_date": "2026-08-09",
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir)
+            initialize_data_pipeline(output, scope)
+            source = {
+                "source_id": "S_DEF", "title": "Industry definition", "publisher": "Association",
+                "url": "https://example.test/definition", "source_type": "INDUSTRY_ASSOCIATION",
+                "source_grade": "GRADE_B", "publication_date": "2026-01-01", "accessed_at": "2026-08-09",
+                "language": "zh", "geography": "China", "is_primary_source": True,
+                "datasets_supported": ["industry_definition"], "access_status": "SUCCESS", "access_issue": "",
+            }
+            observation = {
+                "dataset_id": "market_segments", "entity": "中国现制饮品市场",
+                "metric": "industry_definition", "metric_id": "industry_definition",
+                "text_value": "门店现场制作的非酒精饮品。", "geography": "China",
+                "period": "2026", "source_id": "S_DEF",
+            }
+            result = process_acquisition_response(output, scope, {
+                "sources": [source], "observations": [observation], "search_round": 1,
+            })
+            self.assertEqual(result["observations"][0]["dataset_id"], "industry_definition")
+            definition = next(item for item in result["sufficiency"]["datasets"] if item["dataset_id"] == "industry_definition")
+            self.assertEqual(definition["observation_count"], 1)
 
     def test_lufthansa_queries_use_aviation_vocabulary_without_global_price_suffix(self):
         scope = {

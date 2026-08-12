@@ -22,10 +22,15 @@ def _filled(value):
 
 
 def _recommended_queries(dataset_id, entity, field, scope):
+    schema_fields = {
+        "entity", "value", "text_value", "unit", "currency", "geography",
+        "period", "source_id", "channel", "price_type", "metric_definition",
+        "observation", "dataset", "data",
+    }
     return build_dataset_queries(
         scope, dataset_id, entity=entity or None,
         missing_field=field if field not in {"metric", "data"} else None,
-        missing_metric=field if field not in {"observation", "dataset", "data"} else None,
+        missing_metric=field if field not in schema_fields else None,
         limit=5,
     )
 

@@ -84,9 +84,52 @@ def persist_review_model(folder, raw):
     _reject_tagged_output_for_strict_v2(folder, "review", raw)
     payload = extract_json_block(raw, "review_issues_json")
     if not payload:
-        return None
+        # Legacy/Fake agents may return only the human-readable Review notes.
+        # Project explicit R headings into the canonical contract rather than
+        # allowing downstream stages to reference IDs that have no JSON home.
+        note_text = extract_text_block(raw, "review_notes") or str(raw or "")
+        matches = list(re.finditer(
+            r"^\s*#{1,6}\s+R\d+\b[^\n]*\n(.*?)(?=^\s*#{1,6}\s+R\d+\b|\Z)",
+            note_text, re.I | re.M | re.S,
+        ))
+        if not matches:
+            return None
+        payload = {
+            "schema_version": "2.0",
+            "issues": [
+                {
+                    "review_id": f"R{index}",
+                    "severity": "WARNING",
+                    "category": "general",
+                    "issue": re.sub(r"\s+", " ", match.group(1)).strip()[:500],
+                    "evidence": re.sub(r"\s+", " ", match.group(1)).strip()[:500],
+                    "required_action": "按Review说明在Fact Verification与Strategy中处理并记录结果",
+                    "status": "OPEN",
+                }
+                for index, match in enumerate(matches, 1)
+            ],
+        }
     from .review import render_review_notes, validate_review_notes
-    issues = [dict(item) for item in payload.get("issues", [])]
+    issues = []
+    for index, raw_item in enumerate(payload.get("issues", []), 1):
+        item = dict(raw_item or {})
+        # Compatibility normalization for the legacy Review prompt.  The V2
+        # contract remains the only persisted form and downstream Strategy can
+        # therefore always reference real R1...Rn IDs.
+        issues.append(
+            {
+                "review_id": f"R{index}",
+                "severity": str(item.get("severity") or "WARNING").upper(),
+                "category": str(
+                    item.get("category") or item.get("dataset_id")
+                    or item.get("section_id") or "general"
+                ),
+                "issue": str(item.get("issue") or item.get("title") or item.get("reason") or ""),
+                "evidence": str(item.get("evidence") or item.get("reason") or "未提供具体证据"),
+                "required_action": str(item.get("required_action") or item.get("suggested_action") or "补充或修正该问题"),
+                "status": str(item.get("status") or "OPEN").upper(),
+            }
+        )
     errors = validate_review_notes(issues)
     if errors:
         _record(folder, "review", {"issues": issues})

@@ -94,6 +94,21 @@ def _write_dataset_files(files, observations):
         _write_json(files["datasets"] / f"{safe_name}.json", payload)
 
 
+def _reconcile_required_datasets(observations, requirements):
+    requirement_ids = {
+        item.get("dataset_id")
+        for item in (requirements.get("datasets") or [])
+        if item.get("dataset_id")
+    }
+    changed = False
+    for row in observations:
+        metric_dataset = str(row.get("metric_id") or "")
+        if metric_dataset in requirement_ids and row.get("dataset_id") != metric_dataset:
+            row["dataset_id"] = metric_dataset
+            changed = True
+    return changed
+
+
 def process_acquisition_response(output_folder, scope, payload, *, is_gap=False, include_optional_gaps=False):
     files = data_files(output_folder)
     payload = dict(payload or {})
@@ -147,6 +162,13 @@ def process_acquisition_response(output_folder, scope, payload, *, is_gap=False,
         combined_observations,
         sources, scope.get("industry"),
     )
+    # Agents occasionally place an Observation in a neighboring dataset even
+    # though its normalized metric_id is exactly a required dataset ID (for
+    # example industry_definition under market_segments). Reconcile this
+    # deterministic one-to-one case before IDs and sufficiency are computed.
+    _reconcile_required_datasets(
+        normalized_observations, _read(files["requirements"], {})
+    )
     if v2_enabled:
         for row in normalized_observations:
             row["observation_id"] = v2_stable_id(
@@ -178,6 +200,16 @@ def process_acquisition_response(output_folder, scope, payload, *, is_gap=False,
         result_count = row.get("result_count")
         opened = list(row.get("opened_sources") or [])
         accepted = list(row.get("accepted_sources") or row.get("candidate_sources") or [])
+        rejected = list(row.get("rejected_sources") or [])
+        try:
+            extracted_count = int(row.get("extracted_observation_count") or 0)
+        except (TypeError, ValueError):
+            extracted_count = 0
+        execution_evidence = bool(opened or accepted or rejected or extracted_count)
+        if execution_evidence and not executed_at:
+            executed_at = datetime.now().astimezone().isoformat(timespec="seconds")
+        if execution_evidence and result_count is None:
+            result_count = max(len(opened), len(accepted), len(rejected), extracted_count)
         normalized_entries.append({
             **row,
             "query_id": row.get("query_id") or f"Q_R{payload['search_round']}_{index:03d}",
@@ -190,6 +222,7 @@ def process_acquisition_response(output_folder, scope, payload, *, is_gap=False,
             "result_count": result_count,
             "opened_sources": opened,
             "accepted_sources": accepted,
+            "rejected_sources": rejected,
             "rejection_reasons": list(row.get("rejection_reasons") or []),
             "execution_status": "COMPLETED" if executed_at and result_count is not None else "PLANNED_NOT_EXECUTED",
         })
@@ -226,6 +259,11 @@ def run_sufficiency_check(output_folder, scope, *, gap_rounds_completed=None, st
     files = data_files(output_folder)
     requirements = _read(files["requirements"], build_requirements(scope))
     observations = _read(files["observations"], {"observations": []}).get("observations", [])
+    if _reconcile_required_datasets(observations, requirements):
+        observation_payload = {"schema_version": "1.0", "observations": observations}
+        validate_payload("observations", observation_payload)
+        _write_json(files["observations"], observation_payload)
+        _write_dataset_files(files, observations)
     sources = _read(files["sources"], _read(files["source_registry"], {"sources": []})).get("sources", [])
     previous = _read(files["sufficiency"], {})
     result = evaluate_sufficiency(requirements, observations, sources, scope, gap_rounds_completed=(previous.get("gap_search_rounds_completed", 0) if gap_rounds_completed is None else gap_rounds_completed), stop_reason=(previous.get("search_stop_reason", "") if stop_reason is None else stop_reason))
@@ -263,16 +301,39 @@ def import_local_observations(output_folder, scope, payload):
 def apply_observation_verification(output_folder, verification_rows):
     files = data_files(output_folder)
     payload = _read(files["observations"], {"schema_version": "1.0", "observations": []})
-    mapping = {str(row.get("observation_id")): row for row in verification_rows if row.get("observation_id")}
+    grouped = {}
+    for verdict in verification_rows:
+        observation_id = str(verdict.get("observation_id") or "")
+        if observation_id:
+            grouped.setdefault(observation_id, []).append(verdict)
     for row in payload["observations"]:
-        verdict = mapping.get(row.get("observation_id"))
-        if not verdict:
+        verdicts = grouped.get(row.get("observation_id"), [])
+        if not verdicts:
             continue
-        result = str(verdict.get("verification_status") or verdict.get("result") or "NOT_CHECKED").upper()
-        row["verification_status"] = {"VERIFIED": "SUPPORTED", "HISTORICAL": "SUPPORTED", "SUPPORTED": "SUPPORTED", "PARTIAL": "PARTIAL", "UNSUPPORTED": "UNSUPPORTED", "OUTDATED": "UNSUPPORTED", "SUPERSEDED": "UNSUPPORTED"}.get(result, "NOT_CHECKED")
-        row["source_fact_ids"] = list(dict.fromkeys([*(row.get("source_fact_ids") or []), *([verdict.get("fact_id")] if verdict.get("fact_id") else [])]))
-        if verdict.get("temporal_status"):
-            row["temporal_status"] = verdict["temporal_status"]
+        normalized_results = [
+            {"VERIFIED": "SUPPORTED", "HISTORICAL": "SUPPORTED", "SUPPORTED": "SUPPORTED", "PARTIAL": "PARTIAL", "UNSUPPORTED": "UNSUPPORTED", "OUTDATED": "UNSUPPORTED", "SUPERSEDED": "UNSUPPORTED"}.get(
+                str(verdict.get("verification_status") or verdict.get("result") or "NOT_CHECKED").upper(),
+                "NOT_CHECKED",
+            )
+            for verdict in verdicts
+        ]
+        if "UNSUPPORTED" in normalized_results:
+            row["verification_status"] = "UNSUPPORTED"
+        elif "PARTIAL" in normalized_results:
+            row["verification_status"] = "PARTIAL"
+        elif "SUPPORTED" in normalized_results:
+            row["verification_status"] = "SUPPORTED"
+        else:
+            row["verification_status"] = "NOT_CHECKED"
+        fact_ids = [verdict.get("fact_id") for verdict in verdicts if verdict.get("fact_id")]
+        row["source_fact_ids"] = list(dict.fromkeys([*(row.get("source_fact_ids") or []), *fact_ids]))
+        temporal_values = [verdict.get("temporal_status") for verdict in verdicts if verdict.get("temporal_status")]
+        if temporal_values:
+            row["temporal_status"] = temporal_values[-1]
+        grades = [str(verdict.get("source_grade") or "").upper() for verdict in verdicts]
+        grade_order = {"GRADE_A": 0, "GRADE_B": 1, "GRADE_C": 2, "GRADE_D": 3, "GRADE_E": 4, "UNKNOWN": 5, "": 5}
+        if grades:
+            row["source_grade"] = min(grades, key=lambda value: grade_order.get(value, 5))
     validate_payload("observations", payload)
     _write_json(files["observations"], payload)
     _write_dataset_files(files, payload["observations"])

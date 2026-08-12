@@ -1,14 +1,20 @@
 import { useMemo } from "react";
-import type { ReportData } from "../types";
+import type { Observation, ReportData } from "../types";
 import { gradeColors } from "../lib/styles";
 import { EChart } from "./EChart";
 import { EmptyState } from "./EmptyState";
 
 export const requiredFields = ["source_grade"] as const;
 
-export function SourceGradeChart({ report }: { report: ReportData }) {
+export function SourceGradeChart({ report, observations = [] }: { report: ReportData; observations?: Observation[] }) {
   const metrics = [...report.kpis, ...report.time_series.flatMap((item) => item.points), ...report.market_segments.flatMap((item) => item.metrics)];
-  const counts = metrics.reduce<Record<string, number>>((acc, metric) => ({ ...acc, [metric.source_grade]: (acc[metric.source_grade] ?? 0) + 1 }), {});
+  const grades = observations.length
+    ? observations.map((item) => {
+      const grade = String(item.source_grade || "UNKNOWN").replace("GRADE_", "");
+      return grade === "UNKNOWN" ? "N/A" : grade;
+    })
+    : metrics.map((item) => item.source_grade);
+  const counts = grades.reduce<Record<string, number>>((acc, grade) => ({ ...acc, [grade]: (acc[grade] ?? 0) + 1 }), {});
   const data = Object.entries(counts);
   const option = useMemo(() => data.length ? {
     tooltip: { trigger: "axis" as const },

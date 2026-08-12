@@ -23,8 +23,10 @@ export const evidencePage: DashboardPageSpec = {
   widgets: [
     widget("evidence-status", "EvidenceStatusChart", "证据核验状态", "evidence", 1, true),
     widget("source-grade", "SourceGradeChart", "来源等级分布", "evidence", 2, false),
-    widget("quality-issues", "QualityIssuePanel", "质量检查问题", "quality", 3, true),
-    widget("data-gaps", "DataGapPanel", "数据缺口与排除项", "data_gaps", 4, true),
+    widget("dataset-coverage", "DataCoverageChart", "数据集覆盖", "data_coverage", 3, true),
+    widget("observation-coverage", "ObservationCoverageChart", "结构化证据覆盖", "observations", 4, false),
+    widget("quality-issues", "QualityIssuePanel", "质量检查问题", "quality", 5, true),
+    widget("data-gaps", "DataGapPanel", "数据缺口与排除项", "data_gaps", 6, true),
   ],
 };
 
@@ -46,4 +48,3 @@ export function finalizeTemplate(
     allowedComponents: [...new Set(pages.flatMap((page) => page.widgets.map((item) => item.component)))],
   };
 }
-
