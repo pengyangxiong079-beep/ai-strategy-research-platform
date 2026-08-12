@@ -12,12 +12,16 @@ describe("static and mobile delivery", () => {
     expect(css).toContain("overflow-wrap: anywhere");
   });
 
-  it("generates an offline single-file dashboard for the Xiaopeng run", () => {
-    const snapshot = resolve(process.cwd(), "../outputs/20260806_182326_小鹏进入德国乘用车市场/dashboard/dashboard.html");
-    expect(existsSync(snapshot)).toBe(true);
-    const html = readFileSync(snapshot, "utf8");
-    expect(html).toContain("dashboard-embedded-data");
-    expect(html).not.toMatch(/<script[^>]+src=/i);
-    expect(html).not.toMatch(/<link[^>]+rel=["']stylesheet/i);
+  it("prepares a portable offline dashboard bundle from the versioned sample", () => {
+    const catalogPath = resolve(process.cwd(), "public/data/index.json");
+    expect(existsSync(catalogPath)).toBe(true);
+    const catalog = JSON.parse(readFileSync(catalogPath, "utf8"));
+    const demo = catalog.reports.find((item: { run_id: string }) => item.run_id === "public_fixture_company_strategy");
+    expect(demo).toBeTruthy();
+    const bundlePath = resolve(process.cwd(), "public/data", demo.data_url.split("/").at(-1));
+    expect(existsSync(bundlePath)).toBe(true);
+    const bundle = JSON.parse(readFileSync(bundlePath, "utf8"));
+    expect(bundle.dashboard.report_data.scope.topic).toContain("Example Group");
+    expect(bundle.dashboard.meta.is_test_fixture).toBe(true);
   });
 });

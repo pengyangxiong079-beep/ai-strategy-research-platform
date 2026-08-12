@@ -7,6 +7,8 @@ import shutil
 
 from pipeline_v2.model import create_run_state, save_run_state
 from pipeline_v2.service import PipelineV2Service
+from pipeline_v2.orchestrator import PipelineV2Orchestrator
+from pipeline_v2.fake_agent_registry import FakeAgentRegistry
 from ui.view_models.decisions_vm import decisions_view_model
 from ui.view_models.project_vm import project_view_model
 from ui.view_models.quality_vm import quality_view_model
@@ -15,6 +17,18 @@ from ui.view_models.results_vm import results_view_model
 from ui.view_models.run_vm import overview_view_model
 
 SCOPE = {"analysis_type_id": "COMPANY_STRATEGY", "topic": "Fixture", "industry": "aviation", "geography": "Europe", "analysis_date": "2026-08-09", "required_sections": ["overview"]}
+
+
+def _portable_v2_run(root):
+    """Build a complete run from versioned inputs without network or outputs/."""
+    folder = root / "v2-company-strategy-run"
+    scope = json.loads((Path(__file__).parent / "fixtures/v2_company_strategy/scope.json").read_text(encoding="utf-8"))
+    folder.mkdir(parents=True)
+    (folder / "00_analysis_scope.json").write_text(json.dumps(scope, ensure_ascii=False), encoding="utf-8")
+    PipelineV2Service(root).initialize(folder, "fixture_company_strategy", scope)
+    feedback = {"schema_version": "2.0", "feedback": [{"feedback_id": "HFB_fixture", "decision_id": "DEC_fixture", "claim_ids": [], "choice": "accept", "status": "RESOLVED"}]}
+    PipelineV2Orchestrator(FakeAgentRegistry()).execute(folder, human_feedback=feedback)
+    return folder
 
 
 def _fixture(root, *, status="AWAITING_HUMAN_REVIEW"):
@@ -92,9 +106,8 @@ def test_workspace_entrypoint_and_wizard_render_without_agent_calls():
 
 def test_all_workspace_pages_load_against_offline_v2_fixture(tmp_path):
     from unittest.mock import patch
-    source = Path(__file__).parent / "artifacts/v2-company-strategy-run"
     fixture_root = tmp_path / "artifacts"
-    shutil.copytree(source, fixture_root / "v2-company-strategy-run")
+    _portable_v2_run(fixture_root)
     env = {"WORKSPACE_V2": "1", "WORKSPACE_OUTPUTS_ROOT": str(fixture_root)}
     expected = {
         "app_pages/projects.py": "项目", "app_pages/new_analysis.py": "新建分析",
@@ -112,9 +125,8 @@ def test_all_workspace_pages_load_against_offline_v2_fixture(tmp_path):
 
 def test_revision_ui_preview_create_and_execute_real_local_plan(tmp_path):
     from unittest.mock import patch
-    source = Path(__file__).parent / "artifacts/v2-company-strategy-run"
     fixture_root = tmp_path / "artifacts"
-    shutil.copytree(source, fixture_root / "v2-company-strategy-run")
+    _portable_v2_run(fixture_root)
     env = {"WORKSPACE_V2": "1", "WORKSPACE_OUTPUTS_ROOT": str(fixture_root)}
     with patch.dict("os.environ", env):
         app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "streamlit_app.py")).run(timeout=30)

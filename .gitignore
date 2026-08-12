@@ -25,12 +25,15 @@ browser-data/
 outputs/
 audit/
 tests/artifacts/
+!tests/fixtures/
+!tests/fixtures/**
 *.log
 *.tmp
 
 # Frontend
 dashboard-web/node_modules/
 dashboard-web/dist/
+dashboard-web/offline-snapshots/
 dashboard-web/public/data/
 dashboard-web/.vite/
 coverage/

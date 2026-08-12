@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 
-from openai_codex import Codex, Sandbox
+from pipeline_v2.agent_provider import create_agent_registry
 
 from dashboard.compiler import compile_dashboard
 from dashboard.exporter import DashboardExportError, generate_dashboard_html
@@ -215,6 +215,32 @@ SENSITIVE_PATTERNS = (
         r"\s*[:=]\s*[^\s,;]+"
     ),
 )
+
+
+Codex = None
+Sandbox = None
+
+
+def _build_codex_runtime():
+    codex_cls = globals().get("Codex")
+    if codex_cls is not None:
+        sandbox_cls = globals().get("Sandbox")
+        if sandbox_cls is None:
+            sandbox_cls = type("Sandbox", (), {"read_only": "read_only"})
+            globals()["Sandbox"] = sandbox_cls
+        return codex_cls, sandbox_cls
+
+    registry = create_agent_registry()
+    runtime = getattr(registry, "runtime", None)
+    if runtime is None:
+        raise RuntimeError(
+            "当前 Agent Provider 不允许 legacy Codex 运行；仅在 "
+            "AGENT_PROVIDER=codex 且 STRATEGY_PLATFORM_MODE=live 时启用"
+        )
+    codex_runtime, sandbox_runtime = runtime()
+    codex_cls = globals().setdefault("Codex", codex_runtime)
+    sandbox_cls = globals().setdefault("Sandbox", sandbox_runtime)
+    return codex_cls, sandbox_cls
 
 
 class WorkflowError(RuntimeError):
@@ -3172,6 +3198,7 @@ def rerun_local_revision(output_folder, revision_request=""):
 
 def revise_strategy_report(output_folder, revision_request, progress_callback=None):
     """Run exactly one Strategy thread against existing artifacts, then validate locally."""
+    codex_cls, sandbox_cls = _build_codex_runtime()
     output_folder = Path(output_folder).resolve()
     files = workflow_files(output_folder)
     ensure_initial_revision(output_folder)
@@ -3232,8 +3259,8 @@ def revise_strategy_report(output_folder, revision_request, progress_callback=No
             current_stage,
             "Strategy Agent正在修订现有最终报告；不会重新运行前三个Agent。",
         )
-        with Codex() as codex:
-            strategy_thread = codex.thread_start(model=MODEL, sandbox=Sandbox.read_only)
+        with codex_cls() as codex:
+            strategy_thread = codex.thread_start(model=MODEL, sandbox=sandbox_cls.read_only)
             result = strategy_thread.run(
                 f"""
 你是现有四Agent工作流中的Strategy Agent，当前任务仅修订已经生成的最终报告。
@@ -3631,8 +3658,9 @@ def run_gap_search(output_folder, progress_callback=None, *, include_optional=Fa
     update_manifest(output_folder, current_stage="Gap Search", gap_search_status="RUNNING")
     started = time.perf_counter()
     try:
-        with Codex() as codex:
-            thread = codex.thread_start(model=MODEL, sandbox=Sandbox.read_only)
+        codex_cls, sandbox_cls = _build_codex_runtime()
+        with codex_cls() as codex:
+            thread = codex.thread_start(model=MODEL, sandbox=sandbox_cls.read_only)
             completed = _run_gap_rounds_on_thread(
                 thread, output_folder, scope, progress_callback,
                 include_optional=include_optional,
@@ -3756,6 +3784,7 @@ def run_research_phase(
         report_progress(progress_callback, current_stage, "正在初始化本地Codex客户端……")
 
         # 数据采集与Research复用同一线程，保留来源上下文；仍不启动Strategy Agent。
+        Codex, Sandbox = _build_codex_runtime()
         with Codex() as codex:
             current_stage = "Data Acquisition Agent"
             active_duration_key = "data_acquisition"
@@ -4158,6 +4187,7 @@ def run_strategy_phase(research_result, human_feedback="", progress_callback=Non
             "[4/4] Strategy Agent正在根据审核意见生成最终战略报告……",
         )
 
+        Codex, Sandbox = _build_codex_runtime()
         with Codex() as codex:
             strategy_thread = codex.thread_start(model=MODEL, sandbox=Sandbox.read_only)
             shared_data = _data_context(output_folder)

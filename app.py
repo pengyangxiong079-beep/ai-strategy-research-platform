@@ -1,5 +1,6 @@
 import copy
 import json
+import os
 import re
 from datetime import date
 from pathlib import Path
@@ -29,6 +30,7 @@ from main import (
     sanitize_error_message,
 )
 from research_platform.pipeline import import_local_observations, load_data_coverage
+from pipeline_v2.agent_provider import get_agent_provider_status
 
 
 NOT_STARTED = "尚未开始"
@@ -85,6 +87,7 @@ CURRENT_ANALYSIS_KEYS = (
     "selected_run_id",
     "human_feedback_report",
     "error_state",
+    "failed_action",
     "revision_center_open",
     "revision_request_input",
     "revision_version_select",
@@ -92,6 +95,10 @@ CURRENT_ANALYSIS_KEYS = (
     "dashboard_compare_right",
     "local_observation_upload",
 )
+
+
+def current_agent_provider():
+    return get_agent_provider_status().provider
 
 
 def initialize_state():
@@ -131,6 +138,7 @@ def initialize_state():
         "history_search": "",
         "human_feedback_report": None,
         "error_state": None,
+        "failed_action": None,
         "revision_center_open": False,
         "revision_request_input": "",
         "revision_version_select": None,
@@ -821,6 +829,18 @@ st.title("通用行业与公司战略研究平台")
 st.caption(
     "范围确认 → Research → Review → Fact Verification → 人工审核 → Strategy → 本地质量检查"
 )
+provider_status = get_agent_provider_status()
+provider = provider_status.provider
+if provider_status.real_agent_calls_allowed:
+    st.warning(
+        f"Current Agent Provider: {provider}\n\n"
+        f"Runtime mode: {provider_status.mode}\n\nReal Agent calls allowed: yes"
+    )
+else:
+    st.info(
+        f"Current Agent Provider: {provider}\n\n"
+        f"Runtime mode: {provider_status.mode}\n\nReal Agent calls allowed: no"
+    )
 
 can_start = not st.session_state.is_running and st.session_state.workflow_phase in {
     NOT_STARTED,
@@ -1081,10 +1101,12 @@ if st.session_state.pending_action:
                 state="complete",
                 expanded=False,
             )
+            st.session_state.failed_action = None
         except WorkflowError as error:
             st.session_state.workflow_phase = FAILED
             st.session_state.current_stage = error.stage
             st.session_state.error_state = safe_ui_error(error)
+            st.session_state.failed_action = action
             st.session_state.status_message = "工作流执行失败，已保留此前生成的文件。"
             manifest_path = Path(error.output_folder) / "run_manifest.json"
             if manifest_path.is_file():
@@ -1106,6 +1128,7 @@ if st.session_state.pending_action:
             st.session_state.workflow_phase = FAILED
             st.session_state.current_stage = FAILED
             st.session_state.error_state = safe_ui_error(error)
+            st.session_state.failed_action = action
             st.session_state.status_message = "工作流发生未预期错误。"
             status_panel.update(
                 label=st.session_state.status_message,
@@ -1138,6 +1161,12 @@ elif st.session_state.is_running:
 
 if st.session_state.error_state:
     st.error(st.session_state.error_state)
+    st.caption(f"失败阶段：{st.session_state.current_stage}")
+    if st.session_state.failed_action and st.button(
+        "重试失败操作", icon=":material/refresh:", disabled=st.session_state.is_running
+    ):
+        queue_action(st.session_state.failed_action)
+        st.rerun()
 
 if st.session_state.output_folder:
     st.caption(f"输出目录：{st.session_state.output_folder}")

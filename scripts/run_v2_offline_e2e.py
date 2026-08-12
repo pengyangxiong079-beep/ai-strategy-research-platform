@@ -13,7 +13,7 @@ if str(ROOT) not in sys.path:
 
 from pipeline_v2.orchestrator import PipelineV2Orchestrator
 from pipeline_v2.service import PipelineV2Service
-from tests.fakes import FakeAgentRegistry
+from pipeline_v2.agent_provider import create_agent_registry
 
 
 ARTIFACTS = ROOT / "tests/artifacts"
@@ -27,7 +27,7 @@ def main():
     scope = json.loads((ROOT / "tests/fixtures/v2_company_strategy/scope.json").read_text(encoding="utf-8"))
     (RUN / "00_analysis_scope.json").write_text(json.dumps(scope, ensure_ascii=False, indent=2), encoding="utf-8")
     PipelineV2Service(ARTIFACTS).initialize(RUN, "fixture_company_strategy", scope)
-    registry = FakeAgentRegistry()
+    registry = create_agent_registry("fake")
     feedback = {"schema_version": "2.0", "feedback": [{"feedback_id": "HFB_fixture", "decision_id": "DEC_fixture", "claim_ids": [], "choice": "接受", "status": "RESOLVED"}]}
     state = PipelineV2Orchestrator(registry).execute(RUN, human_feedback=feedback)
     log = {"schema_version": "2.0", "is_test_fixture": True, "run_id": state["run_id"], "overall_status": state["overall_status"], "agent_calls": state["agent_calls"], "events": state["events"]}

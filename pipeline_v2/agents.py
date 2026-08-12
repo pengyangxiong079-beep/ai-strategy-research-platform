@@ -38,6 +38,13 @@ class CodexAgentRegistry:
             return CallableAgent(self.runners[stage])
         return CodexStageAgent(stage, self.model)
 
+    @staticmethod
+    def runtime():
+        """Load the ChatGPT-authenticated Codex runtime only in live mode."""
+        from openai_codex import Codex, Sandbox
+
+        return Codex, Sandbox
+
 
 @dataclass
 class CodexStageAgent:
@@ -48,7 +55,7 @@ class CodexStageAgent:
         # The SDK boundary is intentionally isolated here. Tests inject Fake agents
         # and never import or call this method.
         import json
-        from openai_codex import Codex, Sandbox
+        Codex, Sandbox = CodexAgentRegistry.runtime()
 
         prompt = strict_output_instructions(self.stage) + "\n\n" + json.dumps(request, ensure_ascii=False, indent=2)
         with Codex() as codex:

@@ -4,10 +4,17 @@ import streamlit as st
 
 from ui.components import page_header
 from pipeline_v2.readiness import pipeline_v2_readiness, workspace_v2_readiness
+from pipeline_v2.agent_provider import get_agent_provider_status
 
 page_header("设置", "配置工作台默认值；当前run操作不放在这里。")
 pipeline_ready = pipeline_v2_readiness()
 workspace_ready = workspace_v2_readiness()
+provider_status = get_agent_provider_status()
+with st.container(border=True):
+    st.subheader("Agent Provider")
+    st.write(f"当前 Provider：`{provider_status.provider}`")
+    st.write(f"当前运行模式：`{provider_status.mode}`")
+    st.write(f"允许真实 Agent 调用：`{'是' if provider_status.real_agent_calls_allowed else '否'}`")
 path = Path(".workspace/settings.json")
 try:
     current = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}

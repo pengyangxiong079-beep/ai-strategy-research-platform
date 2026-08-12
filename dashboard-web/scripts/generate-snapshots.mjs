@@ -1,9 +1,11 @@
+import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const dashboardRoot = join(projectRoot, "dashboard-web");
+const portableSnapshotsRoot = join(dashboardRoot, "offline-snapshots");
 const baseHtml = await readFile(join(dashboardRoot, "dist", "index.html"), "utf8");
 const catalog = JSON.parse(await readFile(join(dashboardRoot, "public", "data", "index.json"), "utf8"));
 const reports = {};
@@ -23,14 +25,19 @@ for (const entry of catalog.reports) {
   const embedded = { catalog: { ...catalog, reports: runEntries }, reports: runReports, selected_key: `${entry.run_id}::${entry.revision}` };
   const script = `<script id="dashboard-embedded-data" type="application/json">${safeJson(embedded)}</script>`;
   const html = baseHtml.replace("</head>", `${script}</head>`);
+  const portableDestination = join(portableSnapshotsRoot, entry.run_id, entry.revision, "dashboard.html");
+  await mkdir(dirname(portableDestination), { recursive: true });
+  await writeFile(portableDestination, html, "utf8");
   const runFolder = join(projectRoot, "outputs", entry.run_id);
-  const destination = entry.revision === "current"
-    ? join(runFolder, "dashboard", "dashboard.html")
-    : join(runFolder, "revisions", entry.revision, "dashboard", "dashboard.html");
-  await mkdir(dirname(destination), { recursive: true });
-  await writeFile(destination, html, "utf8");
+  if (existsSync(join(runFolder, "run_manifest.json"))) {
+    const destination = entry.revision === "current"
+      ? join(runFolder, "dashboard", "dashboard.html")
+      : join(runFolder, "revisions", entry.revision, "dashboard", "dashboard.html");
+    await mkdir(dirname(destination), { recursive: true });
+    await writeFile(destination, html, "utf8");
+  }
   count += 1;
-  if (entry.revision === runEntries.at(-1)?.revision) {
+  if (entry.revision === runEntries.at(-1)?.revision && existsSync(join(runFolder, "run_manifest.json"))) {
     const latestDestination = join(runFolder, "dashboard", "dashboard.html");
     await mkdir(dirname(latestDestination), { recursive: true });
     await writeFile(latestDestination, html, "utf8");

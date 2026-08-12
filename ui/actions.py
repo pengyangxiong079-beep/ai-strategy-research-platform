@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import main
+from pipeline_v2.agent_provider import create_agent_registry
 from pipeline_v2.ids import stable_id
 from pipeline_v2.service import PipelineV2Service
 from pipeline_v2.orchestrator import PipelineV2Orchestrator
@@ -26,10 +27,10 @@ def prepare_and_run(scope_inputs, progress_callback=None):
     prepared = main.prepare_analysis_run(scope_inputs)
     state = load_run_state(prepared["output_folder"])
     if state and state.get("configuration", {}).get("strict_structured_output"):
-        from pipeline_v2.agents import CodexAgentRegistry
+        registry = create_agent_registry()
         if progress_callback:
             progress_callback("Pipeline V2", "正在按严格JSON Envelope执行Data至Fact Check。")
-        result = PipelineV2Orchestrator(CodexAgentRegistry()).execute(
+        result = PipelineV2Orchestrator(registry).execute(
             prepared["output_folder"], stages=["scope", "data", "research", "review", "fact_check", "human"],
             stop_before_human=True,
         )
@@ -67,11 +68,11 @@ def record_decision(run, decision, choice, note):
 def continue_strategy(run, progress_callback=None):
     state = load_run_state(run["folder"])
     if state and state.get("configuration", {}).get("strict_structured_output"):
-        from pipeline_v2.agents import CodexAgentRegistry
         feedback = read_json(Path(run["folder"]) / "human/feedback.json", {"schema_version": "2.0", "feedback": []})
+        registry = create_agent_registry()
         if progress_callback:
             progress_callback("Pipeline V2", "正在执行Human Gate、Strategy、Renderer、Dashboard与Quality。")
-        output = PipelineV2Orchestrator(CodexAgentRegistry()).execute(
+        output = PipelineV2Orchestrator(registry).execute(
             run["folder"], stages=["human", "strategy", "report", "dashboard", "quality"],
             human_feedback=feedback,
         )
@@ -94,13 +95,7 @@ def rebuild_stale_local(run):
 
 
 def _revision_executor(run):
-    scope = read_json(Path(run["folder"]) / "00_analysis_scope.json", {})
-    if scope.get("is_test_fixture"):
-        from tests.fakes import FakeAgentRegistry
-        registry = FakeAgentRegistry()
-    else:
-        from pipeline_v2.agents import CodexAgentRegistry
-        registry = CodexAgentRegistry()
+    registry = create_agent_registry()
     return RevisionExecutor(PipelineV2Orchestrator(registry))
 
 
