@@ -8,6 +8,8 @@ from pathlib import Path
 import re
 from jsonschema import Draft202012Validator
 
+from research_platform.report_adapter import enrich_report_data
+
 
 CLAIM_TAGS = {
     "FACT": "事实",
@@ -83,19 +85,74 @@ def normalize_scenarios(scenarios):
     return normalized, errors
 
 
-def report_data_payload(report_model, claims, recommendations, final_markdown, *, run_id, revision_id):
+def attach_fact_verification(observations, claims):
+    """Attach Fact verification to Observations without mutating canonical data."""
+    by_observation = {}
+    for claim in claims:
+        fact_id = claim.get("display_id") or claim.get("claim_id")
+        for observation_id in claim.get("observation_ids", []):
+            current = by_observation.setdefault(observation_id, {"fact_ids": [], "statuses": []})
+            if fact_id:
+                current["fact_ids"].append(fact_id)
+            current["statuses"].append(claim.get("verification_status", "NOT_CHECKED"))
+    rank = {"UNSUPPORTED": 4, "NOT_CHECKED": 3, "PARTIAL": 2, "SUPPORTED": 1}
+    rows = []
+    for raw in observations or []:
+        row = dict(raw)
+        verification = by_observation.get(row.get("observation_id"), {})
+        statuses = verification.get("statuses", [])
+        row["verification_status"] = max(statuses, key=lambda value: rank.get(value, 9)) if statuses else "NOT_CHECKED"
+        row["source_fact_ids"] = list(dict.fromkeys(verification.get("fact_ids", [])))
+        rows.append(row)
+    return rows
+
+
+def _structured_views(observations, claims, sufficiency):
+    verified = attach_fact_verification(observations, claims)
+    enriched = enrich_report_data(
+        {
+            "kpis": [], "time_series": [], "market_segments": [],
+            "competitor_comparisons": [], "data_gaps": [],
+        },
+        verified,
+        sufficiency or {"datasets": []},
+    )
+    return {
+        "metrics": enriched.get("kpis", []),
+        "time_series": enriched.get("time_series", []),
+        "comparisons": enriched.get("competitor_comparisons", []),
+        "segments": enriched.get("market_segments", []),
+        "data_gaps": enriched.get("data_gaps", []),
+        "meta": enriched.get("_meta", {}),
+    }
+
+
+def report_data_payload(
+    report_model, claims, recommendations, final_markdown, *, run_id, revision_id,
+    observations=(), sufficiency=None,
+):
     blocks = build_content_blocks(report_model, claims, recommendations)
     scenarios, scenario_errors = normalize_scenarios(report_model.get("scenarios", []))
+    views = _structured_views(observations, claims, sufficiency) if observations else {
+        "metrics": [], "time_series": [], "comparisons": [], "segments": [],
+        "data_gaps": [], "meta": {},
+    }
     return {
         "schema_version": "2.0",
         "meta": {"run_id": run_id, "revision_id": revision_id, "final_report_sha256": sha256_text(final_markdown)},
         "content_blocks": blocks,
-        "metrics": [],
-        "time_series": [],
-        "comparisons": [],
+        "metrics": views["metrics"],
+        "time_series": views["time_series"],
+        "comparisons": views["comparisons"],
+        "segments": views["segments"],
+        "data_gaps": views["data_gaps"],
         "recommendations": list(recommendations),
         "scenarios": scenarios,
         "validation_errors": scenario_errors,
+        "_meta": {
+            **views["meta"],
+            "observation_ids": [row.get("observation_id") for row in observations if row.get("observation_id")],
+        },
     }
 
 

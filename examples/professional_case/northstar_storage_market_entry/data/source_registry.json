@@ -1,0 +1,7 @@
+{
+  "schema_version": "1.0",
+  "sources": [
+    {"source_id": "SRC_FIXTURE_MODEL", "publisher": "Synthetic Strategy Lab", "source_grade": "GRADE_B", "source_type": "SYNTHETIC_MODEL", "publication_date": "2026-08-12", "datasets_supported": ["market_demand", "channel_conversion"], "access_status": "OFFLINE_FIXTURE", "url": "https://example.invalid/fixture-model", "is_test_fixture": true},
+    {"source_id": "SRC_FIXTURE_OPERATIONS", "publisher": "Synthetic Operations Team", "source_grade": "GRADE_A", "source_type": "SYNTHETIC_INTERNAL", "publication_date": "2026-08-12", "datasets_supported": ["delivery_cycle", "entry_mode"], "access_status": "OFFLINE_FIXTURE", "url": "https://example.invalid/fixture-operations", "is_test_fixture": true}
+  ]
+}

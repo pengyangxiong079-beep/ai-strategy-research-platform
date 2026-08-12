@@ -11,12 +11,17 @@ from .contracts import validate_stage
 from .envelope import AgentOutputError, parse_envelope
 from .model import STAGE_ORDER, load_run_state, now_iso, save_run_state
 from .renderer import render_fact_check, render_report, render_research, render_review
-from .report_protocol import hash_file_consistent, report_data_payload, render_content_blocks, sha256_file, validate_report_data
+from .report_protocol import attach_fact_verification, hash_file_consistent, report_data_payload, render_content_blocks, sha256_file, validate_report_data
 from .quality import aggregate_quality
+from .review import normalize_review_notes
 from .service import PipelineV2Service
 
 
 AGENT_STAGES = ("data", "research", "review", "fact_check", "strategy")
+TRANSIENT_AGENT_ERRORS = (
+    "stream disconnected", "error sending request", "timed out", "timeout",
+    "connection reset", "connection aborted", "temporarily unavailable",
+)
 
 
 def _read(path: Path, default):
@@ -35,6 +40,12 @@ class PipelineV2Orchestrator:
     def __init__(self, registry: AgentRegistry, *, max_attempts: int = 2):
         self.registry = registry
         self.max_attempts = max(1, int(max_attempts))
+
+    @staticmethod
+    def _save(folder: Path, state: dict):
+        saved = save_run_state(folder, state)
+        PipelineV2Service(folder.parent).sync_manifest_from_state(folder, saved)
+        return saved
 
     def execute(self, folder, *, stages: Iterable[str] | None = None,
                 human_feedback: dict | None = None, stop_before_human: bool = False) -> dict:
@@ -80,7 +91,7 @@ class PipelineV2Orchestrator:
         state["current_stage"] = stage
         state["overall_status"] = "RUNNING" if state.get("revision_id") == "rev_000" else "REVISION_IN_PROGRESS"
         state.setdefault("events", []).append({"at": now_iso(), "stage": stage, "event": "STAGE_STARTED", "attempt": attempt})
-        save_run_state(folder, state)
+        self._save(folder, state)
 
     def _run_scope(self, folder: Path, state: dict) -> bool:
         self._begin(folder, state, "scope")
@@ -88,30 +99,49 @@ class PipelineV2Orchestrator:
         return self._commit_gate(folder, state, "scope", payload, {})
 
     def _request(self, folder: Path, state: dict, stage: str, attempt: int,
-                 previous_output=None, errors=None) -> dict:
-        return {
+                 previous_output=None, errors=None, previous_invalid_output=None) -> dict:
+        request = {
             "pipeline_version": "2.0", "strict_structured_output": True,
             "run_id": state["run_id"], "revision_id": state["revision_id"],
             "stage": stage, "attempt": attempt,
             "inputs": self._stage_inputs(folder, stage),
             "previous_structured_output": previous_output,
+            "previous_invalid_output": previous_invalid_output,
             "error_packet": errors or [],
             "stage_contract": self._contract_description(stage),
-            "output_schema": {"envelope": "2.0", "required_artifacts": self._expected(stage)},
-            "remaining_attempts": self.max_attempts - attempt,
+            "output_schema": {
+                "envelope": "2.0", "required_artifacts": self._expected(stage),
+                "artifact_contract": self._artifact_contract(stage),
+            },
+            "remaining_attempts": max(0, self.max_attempts - attempt),
         }
+        if stage == "data" and errors and {
+            row.get("repair_type") for row in errors
+        } == {"UPSTREAM_DATA_REQUIRED"}:
+            request["repair_context"] = self._bounded_gap_context(folder, previous_output, errors)
+        return request
 
     def _run_agent_stage(self, folder: Path, state: dict, stage: str) -> bool:
         previous = None
+        previous_invalid = None
         last_errors = []
         start_attempt = max(1, int(state["stages"][stage].get("attempt", 0)) + 1)
-        for attempt in range(start_attempt, self.max_attempts + 1):
+        attempt_limit = self.max_attempts
+        gap_search_started = any(
+            row.get("stage") == stage and row.get("event") == "BOUNDED_GAP_SEARCH_STARTED"
+            for row in state.get("events", [])
+        )
+        attempt = start_attempt
+        while attempt <= attempt_limit:
             self._begin(folder, state, stage, attempt)
-            request = self._request(folder, state, stage, attempt, previous, last_errors)
+            request = self._request(
+                folder, state, stage, attempt, previous, last_errors, previous_invalid
+            )
             calls = state.setdefault("agent_calls", {"total": 0, "by_stage": {}})
             calls["total"] = int(calls.get("total", 0)) + 1
             calls.setdefault("by_stage", {})[stage] = int(calls["by_stage"].get(stage, 0)) + 1
-            save_run_state(folder, state)
+            self._save(folder, state)
+            raw = None
             try:
                 raw = self.registry.get(stage).run(request)
                 envelope = parse_envelope(
@@ -119,6 +149,10 @@ class PipelineV2Orchestrator:
                     revision_id=state["revision_id"],
                 )
                 previous = envelope
+                previous_invalid = None
+                candidate_folder = folder / "quality/candidates"
+                candidate_folder.mkdir(parents=True, exist_ok=True)
+                _write(candidate_folder / f"{stage}_attempt_{attempt}.json", envelope)
                 payload, context = self._gate_payload(folder, stage, envelope["artifacts"])
                 gate = validate_stage(stage, payload, context)
                 if gate.can_continue:
@@ -127,24 +161,69 @@ class PipelineV2Orchestrator:
                 last_errors = [self._normalize_issue(x, attempt) for x in gate.errors]
             except AgentOutputError as error:
                 last_errors = [error.to_issue()]
-                previous = None
+                previous_invalid = raw if isinstance(raw, (str, dict)) else repr(raw)
+                candidate_folder = folder / "quality/candidates"
+                candidate_folder.mkdir(parents=True, exist_ok=True)
+                _write(candidate_folder / f"{stage}_attempt_{attempt}_invalid.json", {
+                    "schema_version": "2.0", "stage": stage, "attempt": attempt,
+                    "parse_error": last_errors[0], "raw_response": previous_invalid,
+                })
+                if isinstance(raw, dict):
+                    previous = raw
+                elif isinstance(raw, str):
+                    try:
+                        recovered = json.loads(raw)
+                        previous = recovered if isinstance(recovered, dict) else None
+                    except (TypeError, ValueError):
+                        previous = None
             except Exception as error:  # technical failures stay distinct
+                transient = isinstance(error, (ConnectionError, TimeoutError)) or any(
+                    token in str(error).lower() for token in TRANSIENT_AGENT_ERRORS
+                )
+                if transient and attempt < self.max_attempts:
+                    state.setdefault("events", []).append({
+                        "at": now_iso(), "stage": stage, "event": "AGENT_TECHNICAL_RETRY",
+                        "detail": str(error)[:300], "attempt": attempt,
+                    })
+                    self._save(folder, state)
+                    attempt += 1
+                    continue
                 state["stages"][stage]["status"] = "FAILED_TECHNICAL"
                 state["overall_status"] = "FAILED_TECHNICAL"
                 state["stages"][stage]["error_codes"] = ["AGENT_TECHNICAL_FAILURE"]
                 state.setdefault("events", []).append({"at": now_iso(), "stage": stage, "event": "FAILED_TECHNICAL", "detail": str(error)[:300], "attempt": attempt})
-                save_run_state(folder, state)
+                self._save(folder, state)
                 return False
 
             repair_types = {x.get("repair_type") for x in last_errors}
             state.setdefault("events", []).append({"at": now_iso(), "stage": stage, "event": "GATE_RETRY_REQUIRED", "attempt": attempt, "error_codes": [x.get("rule_id") for x in last_errors]})
+            if repair_types == {"UPSTREAM_DATA_REQUIRED"} and stage == "data" and not gap_search_started:
+                gap_search_started = True
+                if attempt >= attempt_limit:
+                    attempt_limit = attempt + 1
+                gap_context = self._bounded_gap_context(folder, previous, last_errors)
+                _write(folder / "quality/upstream_action.json", {
+                    "schema_version": "2.0", "stage": stage, "status": "SEARCHING",
+                    "recommended_action": "BOUNDED_GAP_SEARCH",
+                    "attempt": attempt, "remaining_attempts": attempt_limit - attempt,
+                    "target_dataset_ids": gap_context["target_dataset_ids"],
+                    "repair_context": gap_context,
+                    "errors": last_errors,
+                })
+                state.setdefault("events", []).append({
+                    "at": now_iso(), "stage": stage, "event": "BOUNDED_GAP_SEARCH_STARTED",
+                    "attempt": attempt, "target_dataset_ids": gap_context["target_dataset_ids"],
+                })
+                self._save(folder, state)
+                attempt += 1
+                continue
             if repair_types != {"STAGE_RETRY"}:
                 if "HUMAN_REQUIRED" in repair_types:
                     self._request_human(folder, state, stage, last_errors)
                 else:
                     if "UPSTREAM_DATA_REQUIRED" in repair_types:
                         _write(folder / "quality/upstream_action.json", {
-                            "schema_version": "2.0", "stage": stage, "status": "PLANNED",
+                            "schema_version": "2.0", "stage": stage, "status": "BLOCKED",
                             "recommended_action": "GAP_SEARCH" if stage == "data" else "CREATE_REVISION_PLAN",
                             "errors": last_errors,
                         })
@@ -153,8 +232,52 @@ class PipelineV2Orchestrator:
             if attempt >= self.max_attempts:
                 self._block(folder, state, stage, last_errors, "BLOCKED_QUALITY")
                 return False
-            save_run_state(folder, state)
+            self._save(folder, state)
+            attempt += 1
         return False
+
+    @staticmethod
+    def _bounded_gap_context(folder: Path, previous_output: dict | None, errors: list[dict]) -> dict:
+        scope = _read(folder / "00_analysis_scope.json", {})
+        artifacts = previous_output.get("artifacts", {}) if isinstance(previous_output, dict) else {}
+        requirements = artifacts.get("requirements", {}) if isinstance(artifacts, dict) else {}
+        requirement_map = {
+            row.get("dataset_id"): row
+            for row in requirements.get("datasets", [])
+            if isinstance(row, dict) and row.get("dataset_id")
+        }
+        targets = []
+        for issue in errors:
+            dataset_id = issue.get("entity_id") or str(issue.get("location", "")).rsplit("/", 1)[-1]
+            actual = issue.get("actual") if isinstance(issue.get("actual"), dict) else {}
+            gaps = actual.get("gaps") if isinstance(actual.get("gaps"), list) else []
+            normalized_gaps = []
+            for gap in gaps or [{}]:
+                gap = gap if isinstance(gap, dict) else {}
+                entity = str(gap.get("entity") or scope.get("company") or scope.get("topic") or "").strip()
+                missing = str(gap.get("missing_field") or "dataset").strip()
+                queries = [str(query).strip() for query in gap.get("recommended_queries", []) if str(query).strip()]
+                if not queries:
+                    query_subject = " ".join(x for x in (entity, dataset_id, missing) if x)
+                    queries = [f"{query_subject} official filing investor relations {scope.get('analysis_date', '')}".strip()]
+                normalized_gaps.append({
+                    "gap_id": gap.get("gap_id"), "entity": entity,
+                    "missing_field": missing,
+                    "needed_observations": max(1, int(gap.get("needed_observations") or 1)),
+                    "recommended_queries": queries,
+                })
+            targets.append({
+                "dataset_id": dataset_id, "requirement": requirement_map.get(dataset_id, {}),
+                "gaps": normalized_gaps,
+            })
+        target_ids = list(dict.fromkeys(row["dataset_id"] for row in targets if row["dataset_id"]))
+        return {
+            "mode": "BOUNDED_CRITICAL_GAP_SEARCH",
+            "target_dataset_ids": target_ids,
+            "targets": targets,
+            "source_priority": ["official disclosures", "regulatory filings", "investor relations", "primary documentation"],
+            "completion_rule": "Search only the listed targets; preserve valid prior evidence; recompute sufficiency; keep unresolved gaps explicit.",
+        }
 
     def _run_human(self, folder: Path, state: dict, feedback: dict | None) -> bool:
         self._begin(folder, state, "human")
@@ -168,7 +291,7 @@ class PipelineV2Orchestrator:
         state["overall_status"] = "AWAITING_HUMAN_REVIEW"
         state["primary_action"] = "REVIEW_DECISIONS"
         state.setdefault("events", []).append({"at": now_iso(), "stage": "human", "event": "AWAITING_HUMAN_REVIEW"})
-        save_run_state(folder, state)
+        self._save(folder, state)
 
     def _request_human(self, folder: Path, state: dict, stage: str, errors: list[dict]):
         decisions = [{
@@ -181,7 +304,7 @@ class PipelineV2Orchestrator:
         state["overall_status"] = "AWAITING_HUMAN_REVIEW"
         state["current_stage"] = stage
         state.setdefault("events", []).append({"at": now_iso(), "stage": stage, "event": "HUMAN_DECISION_REQUIRED"})
-        save_run_state(folder, state)
+        self._save(folder, state)
 
     def _run_report(self, folder: Path, state: dict) -> bool:
         self._begin(folder, state, "report")
@@ -197,6 +320,8 @@ class PipelineV2Orchestrator:
             self._block(folder, state, "report", gate.errors, "BLOCKED_QUALITY")
             return False
         sources = _read(folder / "data/sources.json", _read(folder / "data/source_registry.json", {"sources": []})).get("sources", [])
+        observations = _read(folder / "data/observations.json", {"observations": []}).get("observations", [])
+        sufficiency = _read(folder / "data/sufficiency.json", {"datasets": []})
         recs = _read(folder / "strategy/recommendations.json", {"recommendations": []}).get("recommendations", [])
         rendered = folder / "rendered"
         rendered.mkdir(parents=True, exist_ok=True)
@@ -206,11 +331,17 @@ class PipelineV2Orchestrator:
         (rendered / "01_research_brief.md").write_text(render_research(research, research_claims), encoding="utf-8")
         (rendered / "02_review_notes.md").write_text(render_review(review), encoding="utf-8")
         (rendered / "03_fact_check.md").write_text(render_fact_check(claims, sources), encoding="utf-8")
-        blocks = report_data_payload(report_model, claims, recs, "", run_id=state["run_id"], revision_id=state["revision_id"])["content_blocks"]
+        blocks = report_data_payload(
+            report_model, claims, recs, "", run_id=state["run_id"], revision_id=state["revision_id"],
+            observations=observations, sufficiency=sufficiency,
+        )["content_blocks"]
         markdown = render_content_blocks(report_model.get("title", "战略研究报告"), blocks)
         (rendered / "04_final_report.md").write_text(markdown, encoding="utf-8")
         (folder / "04_final_report.md").write_text(markdown, encoding="utf-8")
-        report_data = report_data_payload(report_model, claims, recs, markdown, run_id=state["run_id"], revision_id=state["revision_id"])
+        report_data = report_data_payload(
+            report_model, claims, recs, markdown, run_id=state["run_id"], revision_id=state["revision_id"],
+            observations=observations, sufficiency=sufficiency,
+        )
         report_data["meta"]["final_report_sha256"] = sha256_file(folder / "04_final_report.md")
         schema_errors = validate_report_data(report_data)
         if schema_errors:
@@ -222,7 +353,8 @@ class PipelineV2Orchestrator:
     def _run_dashboard(self, folder: Path, state: dict) -> bool:
         self._begin(folder, state, "dashboard")
         observations = _read(folder / "data/observations.json", {"observations": []}).get("observations", [])
-        usable = [x for x in observations if x.get("verification_status", "NOT_CHECKED") != "UNSUPPORTED"]
+        claims = _read(folder / "fact_check/verified_claims.json", {"claims": []}).get("claims", [])
+        dashboard_observations = attach_fact_verification(observations, claims)
         scope = _read(folder / "00_analysis_scope.json", {})
         sources = _read(folder / "data/sources.json", _read(folder / "data/source_registry.json", {"sources": []})).get("sources", [])
         source_map = {row.get("source_id"): row for row in sources}
@@ -235,14 +367,20 @@ class PipelineV2Orchestrator:
             "schema_version": "2.0", "derived_from_markdown": False,
             "dashboard_status": "READY_WITH_GAPS" if report_data.get("validation_errors") else "READY",
             "meta": {"run_id": state["run_id"], "revision_id": state["revision_id"], "analysis_type": scope.get("analysis_type_id", "GENERIC_STRATEGY"), "topic": scope.get("topic", ""), "is_demo": bool(scope.get("is_test_fixture"))},
-            "executive_summary": {},
-            "metrics": [{**x, "metric_id": x.get("metric_id") or x.get("metric"), "label": x.get("label") or x.get("metric") or x.get("metric_id"), "source_fact_ids": list(x.get("source_fact_ids") or []), "source_observation_ids": [x.get("observation_id")] if x.get("observation_id") else []} for x in usable if x.get("value") is not None],
+            "executive_summary": {
+                "conclusion": next((row.get("text") for row in report_data.get("content_blocks", []) if row.get("claim_type") in {"RECOMMENDATION", "INFERENCE"} and row.get("text")), ""),
+                "primary_recommendation_id": (report_data.get("recommendations") or [{}])[0].get("recommendation_id"),
+            },
+            "metrics": report_data.get("metrics", []),
             "time_series": report_data.get("time_series", []), "comparisons": report_data.get("comparisons", []),
-            "matrices": [], "segments": [], "geographies": [], "risks": [], "opportunities": [], "strategic_options": [],
+            "matrices": [], "segments": report_data.get("segments", []), "geographies": [], "risks": [], "opportunities": [], "strategic_options": [],
             "recommendations": _read(folder / "strategy/recommendations.json", {"recommendations": []}).get("recommendations", []),
             "initiatives": [],
             "scenarios": report_data.get("scenarios", []), "content_blocks": report_data.get("content_blocks", []),
-            "evidence": [{"observation_id": row.get("observation_id"), "source_id": row.get("source_id"), "source": source_map.get(row.get("source_id"), {}), "verification_status": row.get("verification_status"), "source_fact_ids": row.get("source_fact_ids", [])} for row in usable],
+            "observations": dashboard_observations,
+            "data_coverage": _read(folder / "data/data_coverage.json", _read(folder / "data/sufficiency.json", {})),
+            "data_gaps": report_data.get("data_gaps", []),
+            "evidence": [{"observation_id": row.get("observation_id"), "source_id": row.get("source_id"), "source": source_map.get(row.get("source_id"), {}), "verification_status": row.get("verification_status"), "source_fact_ids": row.get("source_fact_ids", [])} for row in dashboard_observations],
             "quality": _read(folder / "quality/summary.json", {}),
             "revision": {"revision_id": state["revision_id"], "revision_count": sum(path.name != "rev_000" for path in (folder / "revisions").glob("rev_*") if path.is_dir()) if (folder / "revisions").is_dir() else 0},
         }
@@ -277,27 +415,24 @@ class PipelineV2Orchestrator:
             current.update(status="BLOCKED", validation_status="BLOCKED", completed_at=now_iso(), error_codes=[row.get("rule_id") for row in blocking])
             state["overall_status"] = "BLOCKED_QUALITY"
             state["quality_summary"] = summary
-            save_run_state(folder, state)
+            self._save(folder, state)
             return False
         current.update(status="COMPLETE_WITH_WARNINGS" if issues else "COMPLETE", validation_status="PASS", completed_at=now_iso())
         state["quality_summary"] = summary
         state["dependency_state"]["quality"] = "CURRENT"
-        save_run_state(folder, state)
+        self._save(folder, state)
         return True
 
     def _finish_if_possible(self, folder: Path, state: dict, wanted: list[str]):
-        if "quality" not in wanted or state["stages"]["quality"]["status"] not in {"COMPLETE", "COMPLETE_WITH_WARNINGS"}:
+        required = [stage for stage in wanted if stage in state["stages"]]
+        complete = {"COMPLETE", "COMPLETE_WITH_WARNINGS"}
+        if "quality" not in required or any(state["stages"][stage]["status"] not in complete for stage in required):
             return
         state["overall_status"] = "COMPLETED_WITH_WARNINGS" if state["quality_summary"].get("warnings") else "COMPLETED"
         state["primary_action"] = "VIEW_RESULTS"
         state["current_stage"] = "quality"
         state.setdefault("events", []).append({"at": now_iso(), "stage": "quality", "event": "RUN_COMPLETED"})
-        _write(folder / "run_manifest.json", {
-            "schema_version": "2.0", "pipeline_version": "2.0", "run_id": state["run_id"],
-            "revision_id": state["revision_id"], "topic": state["topic"], "final_status": state["overall_status"],
-            "is_test_fixture": bool(_read(folder / "00_analysis_scope.json", {}).get("is_test_fixture")),
-        })
-        save_run_state(folder, state)
+        self._save(folder, state)
 
     def _commit_gate(self, folder, state, stage, payload, context, gate=None) -> bool:
         gate = gate or validate_stage(stage, payload, context)
@@ -308,7 +443,7 @@ class PipelineV2Orchestrator:
         current.update(status="COMPLETE_WITH_WARNINGS" if gate.warnings else "COMPLETE", validation_status=gate.status, completed_at=now_iso(), error_codes=[])
         state["dependency_state"][stage] = "CURRENT"
         state.setdefault("events", []).append({"at": now_iso(), "stage": stage, "event": "GATE_VALIDATED", "detail": gate.status})
-        save_run_state(folder, state)
+        self._save(folder, state)
         return True
 
     def _block(self, folder: Path, state: dict, stage: str, errors: list[dict], overall: str):
@@ -319,12 +454,13 @@ class PipelineV2Orchestrator:
         existing = _read(folder / "quality/issues.json", {"issues": []}).get("issues", [])
         _write(folder / "quality/issues.json", {"schema_version": "2.0", "issues": [x for x in existing if x.get("stage") != stage] + normalized})
         state.setdefault("events", []).append({"at": now_iso(), "stage": stage, "event": "STAGE_BLOCKED", "error_codes": current["error_codes"]})
-        save_run_state(folder, state)
+        self._save(folder, state)
 
     @staticmethod
     def _normalize_issue(issue: dict, attempt: int) -> dict:
         payload = dict(issue)
-        payload.setdefault("error_id", f"{payload.get('stage')}:{attempt}:{payload.get('rule_id')}")
+        identity = payload.get("entity_id") or payload.get("location") or "root"
+        payload.setdefault("error_id", f"{payload.get('stage')}:{attempt}:{payload.get('rule_id')}:{identity}")
         payload.setdefault("attempt", attempt)
         payload.setdefault("json_pointer", payload.get("location", "/"))
         payload.setdefault("allowed_actions", ["RETRY_STAGE", "REQUEST_HUMAN_REVIEW"])
@@ -343,13 +479,18 @@ class PipelineV2Orchestrator:
         return {"stage": stage, "required_inputs": list(contract.required_inputs), "postconditions": list(contract.postconditions), "repair_strategy": contract.repair_strategy}
 
     @staticmethod
+    def _artifact_contract(stage):
+        from .agents import stage_output_contract
+        return stage_output_contract(stage)
+
+    @staticmethod
     def _stage_inputs(folder: Path, stage: str) -> dict:
         paths = {
             "data": ["00_analysis_scope.json"],
             "research": ["data/requirements.json", "data/source_registry.json", "data/observations.json", "data/sufficiency.json"],
             "review": ["research/claims.json", "research/research_model.json"],
             "fact_check": ["research/claims.json", "02_review_notes.json", "data/sources.json", "data/observations.json"],
-            "strategy": ["fact_check/verified_claims.json", "human/feedback.json", "data/observations.json", "02_review_notes.json"],
+            "strategy": ["00_analysis_scope.json", "fact_check/verified_claims.json", "human/feedback.json", "data/observations.json", "02_review_notes.json"],
         }.get(stage, [])
         return {path: _read(folder / path, {}) for path in paths}
 
@@ -364,6 +505,7 @@ class PipelineV2Orchestrator:
             src = _read(folder / "data/source_registry.json", {"sources": []}).get("sources", [])
             return {"claims": artifacts["claims"]}, {"observations": obs, "sources": src}
         if stage == "review":
+            artifacts["review_notes"] = normalize_review_notes(artifacts["review_notes"])
             return {"issues": artifacts["review_notes"]}, {}
         if stage == "fact_check":
             src = _read(folder / "data/sources.json", _read(folder / "data/source_registry.json", {"sources": []})).get("sources", [])
@@ -389,6 +531,9 @@ class PipelineV2Orchestrator:
         }[stage]
         for name, relative in paths.items():
             value = artifacts[name]
+            if name == "verified_claims":
+                for index, claim in enumerate(value, 1):
+                    claim["display_id"] = claim.get("display_id") or f"F{index}"
             if name in {"claims", "verified_claims", "recommendations", "review_notes"}:
                 key = {"review_notes": "issues", "verified_claims": "claims"}.get(name, name)
                 value = {"schema_version": "2.0", key: value}

@@ -1,0 +1,14 @@
+{
+  "schema_version": "2.0",
+  "run_id": "public_fixture_professional_market_entry",
+  "topic": "北辰储能进入德国工商业储能市场（合成案例）",
+  "industry": "工商业储能",
+  "geography": "德国",
+  "analysis_date": "2026-08-12",
+  "current_stage": "dashboard",
+  "final_status": "COMPLETED",
+  "quality_check_status": "WARN",
+  "latest_revision": "rev_000",
+  "is_test_fixture": true,
+  "agent_calls": 0
+}

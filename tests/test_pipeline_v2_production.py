@@ -43,6 +43,17 @@ def test_canonical_offline_e2e_uses_only_structured_artifacts(tmp_path):
     assert all((folder / x).is_file() for x in expected)
     assert registry.call_count() == 5
     assert all(x["status"] in {"COMPLETE", "COMPLETE_WITH_WARNINGS"} for x in state["stages"].values())
+    manifest = json.loads((folder / "run_manifest.json").read_text(encoding="utf-8"))
+    report_data = json.loads((folder / "04_report_data.json").read_text(encoding="utf-8"))
+    dashboard = json.loads((folder / "06_dashboard_data.json").read_text(encoding="utf-8"))
+    assert manifest["final_status"] == "COMPLETED" and manifest["current_stage"] == "quality"
+    assert report_data["metrics"] and report_data["_meta"]["observation_ids"] == ["OBS_fixture_revenue"]
+    assert report_data["metrics"][0]["verification_status"] == "SUPPORTED"
+    assert report_data["metrics"][0]["temporal_status"] == "HISTORICAL"
+    assert report_data["metrics"][0]["confidence"] == "HIGH"
+    assert dashboard["executive_summary"]["conclusion"] == "Protect fixture margin."
+    assert len(dashboard["observations"]) == len(dashboard["evidence"]) == 1
+    assert dashboard["evidence"][0]["source_fact_ids"] == ["F1"]
     claim_a = json.loads((folder / "research/claims.json").read_text(encoding="utf-8"))["claims"][0]["claim_id"]
     claim_b = json.loads((folder / "fact_check/verified_claims.json").read_text(encoding="utf-8"))["claims"][0]["claim_id"]
     assert claim_a == claim_b
@@ -73,6 +84,45 @@ def test_stage_retry_invalid_json_then_success_and_current_stage_only(tmp_path):
     assert registry.call_count("research") == 2
     assert registry.call_count("data") == 1
     assert registry.call_count("review") == 0
+    request = registry.get("research").calls[1]
+    assert request["output_schema"]["artifact_contract"]
+    assert request["error_packet"][0]["json_pointer"] == "/"
+
+
+def test_blocked_state_is_projected_to_manifest_for_audit_discovery(tmp_path):
+    registry = FakeAgentRegistry({"review": ["semantic_error", "semantic_error"]})
+    scope = json.loads(FIXTURE.read_text(encoding="utf-8")); folder = tmp_path / "blocked"; folder.mkdir()
+    (folder / "00_analysis_scope.json").write_text(json.dumps(scope), encoding="utf-8")
+    PipelineV2Service(tmp_path).initialize(folder, "blocked", scope)
+    state = PipelineV2Orchestrator(registry).execute(folder, stages=["scope", "data", "research", "review"])
+    manifest = json.loads((folder / "run_manifest.json").read_text(encoding="utf-8"))
+    assert state["overall_status"] == manifest["final_status"] == "BLOCKED_QUALITY"
+    assert state["current_stage"] == manifest["current_stage"] == "review"
+    assert manifest["review_status"] == "FAILED"
+
+
+def test_review_blocker_alias_completes_without_spending_retry(tmp_path):
+    registry = FakeAgentRegistry()
+    artifacts = registry.get("review")
+    original_run = artifacts.run
+
+    def blocker_run(request):
+        raw = json.loads(original_run(request))
+        raw["artifacts"]["review_notes"] = [{
+            "review_id": "R1", "severity": "BLOCKER", "category": "evidence",
+            "issue": "Material gap", "evidence": "CLM_fixture_revenue",
+            "required_action": "Narrow claim", "status": "OPEN",
+        }]
+        return json.dumps(raw)
+
+    artifacts.run = blocker_run
+    scope = json.loads(FIXTURE.read_text(encoding="utf-8")); folder = tmp_path / "alias"; folder.mkdir()
+    (folder / "00_analysis_scope.json").write_text(json.dumps(scope), encoding="utf-8")
+    PipelineV2Service(tmp_path).initialize(folder, "alias", scope)
+    state = PipelineV2Orchestrator(registry).execute(folder, stages=["scope", "data", "research", "review"])
+    assert state["stages"]["review"]["status"] == "COMPLETE"
+    saved = json.loads((folder / "02_review_notes.json").read_text(encoding="utf-8"))
+    assert saved["issues"][0]["severity"] == "CRITICAL"
 
 
 def test_semantic_retry_fact_source_and_atomic_claim(tmp_path):
@@ -86,8 +136,8 @@ def test_semantic_retry_fact_source_and_atomic_claim(tmp_path):
 def test_retry_limit_technical_and_upstream_are_distinct(tmp_path):
     for label, modes, expected, calls in [
         ("semantic", {"research": ["semantic_error", "semantic_error"]}, "BLOCKED_QUALITY", 2),
-        ("technical", {"research": "technical"}, "FAILED_TECHNICAL", 1),
-        ("upstream", {"data": "semantic_error"}, "BLOCKED_DATA", 1),
+        ("technical", {"research": "technical"}, "FAILED_TECHNICAL", 2),
+        ("upstream", {"data": "semantic_error"}, "BLOCKED_DATA", 2),
     ]:
         root = tmp_path / label; root.mkdir()
         scope = json.loads(FIXTURE.read_text(encoding="utf-8")); folder = root / "run"; folder.mkdir()
@@ -98,6 +148,41 @@ def test_retry_limit_technical_and_upstream_are_distinct(tmp_path):
         assert state["overall_status"] == expected
         target = "data" if label == "upstream" else "research"
         assert registry.call_count(target) == calls
+
+
+def test_data_critical_gap_runs_one_bounded_search_then_promotes_only_passing_candidate(tmp_path):
+    registry = FakeAgentRegistry({"data": ["semantic_error", "success"]})
+    scope = json.loads(FIXTURE.read_text(encoding="utf-8")); folder = tmp_path / "gap_search"; folder.mkdir()
+    (folder / "00_analysis_scope.json").write_text(json.dumps(scope), encoding="utf-8")
+    PipelineV2Service(tmp_path).initialize(folder, "gap_search", scope)
+    state = PipelineV2Orchestrator(registry).execute(folder, stages=["scope", "data"])
+    assert state["stages"]["data"]["status"] == "COMPLETE"
+    assert registry.call_count("data") == 2
+    retry = registry.get("data").calls[1]
+    assert retry["previous_structured_output"]
+    assert {row["rule_id"] for row in retry["error_packet"]} == {"DATA_CRITICAL_INSUFFICIENT"}
+    assert retry["repair_context"]["mode"] == "BOUNDED_CRITICAL_GAP_SEARCH"
+    assert retry["repair_context"]["targets"][0]["gaps"][0]["recommended_queries"]
+    assert (folder / "quality/candidates/data_attempt_1.json").is_file()
+    assert (folder / "quality/candidates/data_attempt_2.json").is_file()
+    canonical = json.loads((folder / "data/sufficiency.json").read_text(encoding="utf-8"))
+    assert canonical["overall_status"] == "PASS"
+    assert any(row["event"] == "BOUNDED_GAP_SEARCH_STARTED" for row in state["events"])
+
+
+def test_data_schema_retry_does_not_consume_the_single_bounded_gap_search(tmp_path):
+    registry = FakeAgentRegistry({"data": ["invalid_json", "semantic_error", "success"]})
+    scope = json.loads(FIXTURE.read_text(encoding="utf-8")); folder = tmp_path / "late_gap"; folder.mkdir()
+    (folder / "00_analysis_scope.json").write_text(json.dumps(scope), encoding="utf-8")
+    PipelineV2Service(tmp_path).initialize(folder, "late_gap", scope)
+    state = PipelineV2Orchestrator(registry).execute(folder, stages=["scope", "data"])
+    assert state["stages"]["data"]["status"] == "COMPLETE"
+    assert registry.call_count("data") == 3
+    assert (folder / "quality/candidates/data_attempt_1_invalid.json").is_file()
+    repair = registry.get("data").calls[2]
+    assert repair["repair_context"]["mode"] == "BOUNDED_CRITICAL_GAP_SEARCH"
+    assert repair["repair_context"]["target_dataset_ids"]
+    assert any(row["event"] == "BOUNDED_GAP_SEARCH_STARTED" for row in state["events"])
 
 
 def test_fact_revision_preserves_upstream_and_revalidates_related_feedback(tmp_path):

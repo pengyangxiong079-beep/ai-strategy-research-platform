@@ -75,3 +75,60 @@ def test_prepare_components_clears_missing_reason_when_ready():
     )
     assert prepared[0]["status"] == "READY"
     assert prepared[0]["reason"] == ""
+
+
+def test_nested_public_fixture_resolves_repository_root(tmp_path):
+    repository = tmp_path / "repo"
+    (repository / ".git").mkdir(parents=True)
+    for relative in ("README.md", ".gitignore", ".env.example", "CONTRIBUTING.md", "SECURITY.md", ".github/workflows/offline-ci.yml"):
+        target = repository / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("fixture", encoding="utf-8")
+    folder = _complete_run(repository / "examples/professional_case", "nested_run", "2026-08-09T00:00:00+00:00")
+    payload = audit_run(discover_runs(repository / "examples/professional_case")[0], "current", folder)
+    assert "GITHUB_FILES_MISSING" not in {issue["rule_id"] for issue in payload["raw_issues"]}
+
+
+def test_incomplete_run_reports_gate_cause_not_missing_downstream_derivatives(tmp_path):
+    root = tmp_path / "outputs"
+    folder = root / "blocked"
+    folder.mkdir(parents=True)
+    _write_json(folder / "run_manifest.json", {
+        "run_id": "blocked", "updated_at": "2026-08-09T00:00:00+00:00",
+        "current_stage": "scope", "final_status": "AWAITING_SCOPE_CONFIRMATION",
+    })
+    _write_json(folder / "run_state.json", {
+        "run_id": "blocked", "current_stage": "review", "overall_status": "BLOCKED_QUALITY",
+    })
+    _write_json(folder / "quality/issues.json", {"issues": [{
+        "rule_id": "REVIEW_SEVERITY_INVALID", "stage": "review", "artifact": "02_review_notes.json",
+        "location": "/issues/0/severity", "reason": "unsupported severity: BLOCKER",
+        "severity": "ERROR", "repair_type": "STAGE_RETRY",
+    }]})
+    row = discover_runs(root)[0]
+    payload = audit_run(row, "current", folder, incomplete_latest=row)
+    rules = {issue["rule_id"] for issue in payload["raw_issues"]}
+    assert rules >= {"REVIEW_SEVERITY_INVALID", "RUN_INCOMPLETE_AT_GATE"}
+    assert "REPORT_HASH_MISMATCH" not in rules
+    assert "OBSERVATION_LINEAGE_COUNT_MISMATCH" not in rules
+    assert payload["incomplete_latest_run"]["current_stage"] == "review"
+    assert payload["incomplete_latest_run"]["overall_status"] == "BLOCKED_QUALITY"
+
+
+def test_blocked_data_incomplete_summary_requires_live_rerun(tmp_path):
+    root = tmp_path / "outputs"
+    folder = root / "blocked_data"
+    folder.mkdir(parents=True)
+    _write_json(folder / "run_manifest.json", {
+        "run_id": "blocked_data", "updated_at": "2026-08-09T00:00:00+00:00",
+        "current_stage": "data", "final_status": "BLOCKED_DATA",
+    })
+    _write_json(folder / "run_state.json", {
+        "run_id": "blocked_data", "current_stage": "data", "overall_status": "BLOCKED_DATA",
+    })
+    _write_json(folder / "quality/issues.json", {"issues": []})
+    row = discover_runs(root)[0]
+    payload = audit_run(row, "current", folder, incomplete_latest=row)
+    summary = next(issue for issue in payload["raw_issues"] if issue["rule_id"] == "RUN_INCOMPLETE_AT_GATE")
+    assert summary["repair_type"] == "REQUIRES_LIVE_RERUN"
+    assert any(issue["rule_id"] == "RUN_INCOMPLETE_AT_GATE" for issue in payload["remaining_gaps"])

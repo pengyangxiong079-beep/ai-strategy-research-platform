@@ -1,0 +1,6 @@
+{
+  "schema_version": "2.0",
+  "recommendations": [
+    {"recommendation_id": "REC_PARTNER_GATE", "item_id": "REC_PARTNER_GATE", "label": "以伙伴主导模式有条件进入", "description": "先验证商业闭环，再决定是否扩张本地固定成本。", "priority": "P0", "claim_ids": ["CLM1", "CLM3"], "source_fact_ids": ["F2", "F3", "F4", "F6"]}
+  ]
+}

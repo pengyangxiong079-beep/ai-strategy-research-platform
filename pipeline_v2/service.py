@@ -130,6 +130,69 @@ class PipelineV2Service:
         self.project_artifacts(folder, state)
         return save_run_state(folder, state)
 
+    def sync_manifest_from_state(self, folder, state=None):
+        """Project canonical V2 state into the discovery manifest.
+
+        ``run_state.json`` remains authoritative. This projection keeps run
+        discovery, audit and legacy UI consumers from observing stale status.
+        """
+        folder = Path(folder)
+        state = state or load_run_state(folder)
+        if not state:
+            return None
+        manifest_path = folder / "run_manifest.json"
+        manifest = _read_json(manifest_path, {})
+        scope = _read_json(folder / "00_analysis_scope.json", {})
+        stage_status = {
+            "COMPLETE": "COMPLETED", "COMPLETE_WITH_WARNINGS": "COMPLETED",
+            "RUNNING": "RUNNING", "AWAITING_USER": "AWAITING_APPROVAL",
+            "BLOCKED": "FAILED", "FAILED_TECHNICAL": "FAILED", "PENDING": "PENDING",
+            "STALE": "STALE", "VALIDATING": "RUNNING",
+        }
+        stages = state.get("stages", {})
+        data_status = stage_status.get(stages.get("data", {}).get("status"), "PENDING")
+        quality_status = stages.get("quality", {}).get("validation_status", "PENDING")
+        if quality_status == "BLOCKED":
+            quality_status = "FAIL"
+        elif quality_status == "PASS_WITH_WARNINGS":
+            quality_status = "WARN"
+        current = str(state.get("current_stage") or "scope")
+        latest_event = (state.get("events") or [{}])[-1]
+        error_message = latest_event.get("detail", "") if latest_event.get("event") == "FAILED_TECHNICAL" else ""
+        manifest.update({
+            "schema_version": manifest.get("schema_version") or "2.2",
+            "pipeline_version": "2.0",
+            "run_id": state.get("run_id"), "revision_id": state.get("revision_id", "rev_000"),
+            "topic": state.get("topic") or scope.get("topic", ""),
+            "analysis_type": scope.get("analysis_type", state.get("normalized_analysis_type", "")),
+            "industry": scope.get("industry", state.get("industry", "")),
+            "geography": scope.get("geography", ""), "analysis_date": scope.get("analysis_date", ""),
+            "selected_template": scope.get("selected_template", "general"),
+            "created_at": manifest.get("created_at") or state.get("created_at"),
+            "updated_at": state.get("updated_at") or now_iso(),
+            "current_stage": current, "final_status": state.get("overall_status"),
+            "data_requirements_status": data_status, "data_acquisition_status": data_status,
+            "data_sufficiency_status": data_status,
+            "research_status": stage_status.get(stages.get("research", {}).get("status"), "PENDING"),
+            "review_status": stage_status.get(stages.get("review", {}).get("status"), "PENDING"),
+            "fact_check_status": stage_status.get(stages.get("fact_check", {}).get("status"), "PENDING"),
+            "approval_status": stage_status.get(stages.get("human", {}).get("status"), "PENDING"),
+            "strategy_status": stage_status.get(stages.get("strategy", {}).get("status"), "PENDING"),
+            "quality_check_status": quality_status,
+            "dashboard_status": (
+                "READY" if stages.get("dashboard", {}).get("status") == "COMPLETE"
+                else "READY_WITH_GAPS" if stages.get("dashboard", {}).get("status") == "COMPLETE_WITH_WARNINGS"
+                else "UNAVAILABLE"
+            ),
+            "error_message": str(error_message)[:500],
+            "quality_issues": _read_json(folder / "quality/issues.json", {"issues": []}).get("issues", []),
+            "latest_revision": None if state.get("revision_id", "rev_000") == "rev_000" else state.get("revision_id"),
+            "is_test_fixture": bool(scope.get("is_test_fixture")),
+        })
+        from main import atomic_write_json
+        atomic_write_json(manifest_path, manifest)
+        return manifest
+
     @staticmethod
     def _stage_from_manifest(manifest):
         text = str(manifest.get("current_stage", "")).lower()

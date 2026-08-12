@@ -6,6 +6,7 @@ import { getAvailablePages, getDashboardTemplate } from "./templates";
 import type { DisplayCondition } from "./templates/types";
 import { WidgetRenderer } from "./components/WidgetRenderer";
 import { EmptyState } from "./components/EmptyState";
+import { DecisionBrief } from "./components/DecisionBrief";
 
 function initialQuery() {
   const query = new URLSearchParams(window.location.search);
@@ -100,7 +101,7 @@ function App() {
     return (
       <>
         <section className="page-purpose"><strong>{currentPage.label}</strong><p>{currentPage.purpose}</p></section>
-        {currentPage.id === availablePages[0]?.id && view.executive_summary && <section className="panel narrative"><h2>核心战略结论</h2><p>{view.executive_summary}</p></section>}
+        {currentPage.id === availablePages[0]?.id && <DecisionBrief view={view} />}
         <div className="page-widgets">
           {visibleWidgets.length ? visibleWidgets.map((spec) => (
             <WidgetRenderer key={spec.id} spec={spec} view={view} locale={language} catalog={catalog} current={bundle} />

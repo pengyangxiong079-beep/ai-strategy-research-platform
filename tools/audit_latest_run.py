@@ -50,6 +50,14 @@ def _complete(folder: Path):
     return not missing, missing
 
 
+def _repository_root(run_folder: Path):
+    """Resolve the repository independently of outputs/example nesting depth."""
+    for candidate in (run_folder, *run_folder.parents):
+        if (candidate / ".git").exists() or (candidate / "pyproject.toml").is_file():
+            return candidate
+    return run_folder.parents[1]
+
+
 def discover_runs(outputs_root: Path):
     rows = []
     for manifest_path in outputs_root.rglob("run_manifest.json") if outputs_root.is_dir() else []:
@@ -149,6 +157,7 @@ def audit_run(run_row, revision_id, source_folder: Path, incomplete_latest=None)
     search_log = _json(source_folder / "data/search_log.json", _json(root / "data/search_log.json", {"entries": []}))
     gap_plan = _json(source_folder / "data/gap_search_plan.json", _json(root / "data/gap_search_plan.json", {"queries": []}))
     issues = []
+    run_state = _json(root / "run_state.json", {})
 
     for field in ("analysis_type", "industry", "geography", "analysis_date", "time_horizon", "selected_template", "required_sections"):
         if not scope.get(field):
@@ -263,11 +272,12 @@ def audit_run(run_row, revision_id, source_folder: Path, incomplete_latest=None)
         if str(q.get("status") or "").upper() == "WARN" and q.get("severity") == "ERROR":
             issues.append(_issue("QUALITY_SEVERITY_CONFLICT", "WARN issue cannot carry ERROR severity", "05_quality_check.json", priority="P2", severity="WARNING", classification="parser false positive"))
 
-    secret_scan = scan_repository(root.parents[1])
+    repository_root = _repository_root(root)
+    secret_scan = scan_repository(repository_root)
     required_public = ("README.md", ".gitignore", ".env.example", "CONTRIBUTING.md", "SECURITY.md", ".github/workflows/offline-ci.yml")
-    missing_public = [name for name in required_public if not (root.parents[1] / name).is_file()]
-    git_repository = (root.parents[1] / ".git").is_dir()
-    license_present = any((root.parents[1] / name).is_file() for name in ("LICENSE", "LICENSE.md", "LICENSE.txt"))
+    missing_public = [name for name in required_public if not (repository_root / name).is_file()]
+    git_repository = (repository_root / ".git").exists()
+    license_present = any((repository_root / name).is_file() for name in ("LICENSE", "LICENSE.md", "LICENSE.txt"))
     github_ready = not missing_public and not secret_scan["findings"] and not secret_scan["large_files"] and git_repository and license_present
     github_readiness = {
         "status": "READY" if github_ready else "PARTIAL",
@@ -279,6 +289,29 @@ def audit_run(run_row, revision_id, source_folder: Path, incomplete_latest=None)
     if missing_public:
         issues.append(_issue("GITHUB_FILES_MISSING", "Public repository files are missing", "repository", priority="P2", severity="WARNING", repair_type="LOCAL_REPAIRABLE", affected=missing_public))
 
+    if incomplete_latest and incomplete_latest.get("folder") == root:
+        # Missing downstream artifacts are an expected consequence of a gate
+        # stopping the run. Diagnose the blocking stage instead of manufacturing
+        # lineage/hash root causes for files that do not exist yet.
+        missing = set(incomplete_latest.get("missing") or [])
+        issues = [
+            row for row in issues
+            if row.get("artifact") == "repository"
+            or (row.get("artifact") not in missing and (root / str(row.get("artifact"))).exists())
+        ]
+        canonical_issues = _json(root / "quality/issues.json", {"issues": []}).get("issues", [])
+        issues.extend(canonical_issues)
+        current_stage = run_state.get("current_stage") or manifest.get("current_stage") or "unknown"
+        overall = run_state.get("overall_status") or manifest.get("final_status") or "INCOMPLETE"
+        blocked_on_data = current_stage == "data" and overall == "BLOCKED_DATA"
+        issues.append(_issue(
+            "RUN_INCOMPLETE_AT_GATE",
+            f"Run stopped at {current_stage} with status {overall}",
+            "run_state.json" if run_state else "run_manifest.json",
+            pointer=f"/stages/{current_stage}" if run_state else "/current_stage",
+            repair_type="REQUIRES_LIVE_RERUN" if blocked_on_data else "STAGE_RETRY",
+        ))
+
     roots = aggregate_root_causes(issues)
     status = "DETERMINISTIC_FAIL" if any(row["severity"] == "ERROR" for row in issues) else ("WARN_ONLY" if issues else "PASS")
     if incomplete_latest:
@@ -287,7 +320,13 @@ def audit_run(run_row, revision_id, source_folder: Path, incomplete_latest=None)
     return {
         "schema_version": "1.0", "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "mode": "OFFLINE", "selected_run": selected, "selected_revision": revision_id,
-        "incomplete_latest_run": ({"path": str(incomplete_latest["folder"].resolve()), "run_id": incomplete_latest["manifest"].get("run_id"), "missing": incomplete_latest["missing"], "current_stage": incomplete_latest["manifest"].get("current_stage")} if incomplete_latest else None),
+        "incomplete_latest_run": ({
+            "path": str(incomplete_latest["folder"].resolve()),
+            "run_id": incomplete_latest["manifest"].get("run_id"),
+            "missing": incomplete_latest["missing"],
+            "current_stage": (_json(incomplete_latest["folder"] / "run_state.json", {}).get("current_stage") or incomplete_latest["manifest"].get("current_stage")),
+            "overall_status": (_json(incomplete_latest["folder"] / "run_state.json", {}).get("overall_status") or incomplete_latest["manifest"].get("final_status")),
+        } if incomplete_latest else None),
         "overall_status": status, "root_causes": roots, "raw_issues": issues,
         "affected_artifacts": sorted({row["artifact"] for row in issues}),
         "automatic_fixes": ["Generated deterministic audit reports; original outputs were not modified."],

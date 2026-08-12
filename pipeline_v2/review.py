@@ -9,6 +9,32 @@ REVIEW_ID_PATTERN = re.compile(r"^R([1-9]\d*)$")
 REQUIRED_FIELDS = ("review_id", "severity", "category", "issue", "evidence", "required_action", "status")
 ALLOWED_SEVERITIES = {"CRITICAL", "HIGH", "MEDIUM", "LOW", "ERROR", "WARNING", "INFO"}
 ALLOWED_STATUSES = {"OPEN", "RESOLVED", "ACCEPTED", "DEFERRED"}
+SEVERITY_ALIASES = {
+    "BLOCKER": "CRITICAL", "BLOCKING": "CRITICAL", "WARN": "WARNING",
+    "MED": "MEDIUM", "MINOR": "LOW",
+}
+STATUS_ALIASES = {
+    "PENDING": "OPEN", "CLOSED": "RESOLVED", "FIXED": "RESOLVED",
+    "ACKNOWLEDGED": "ACCEPTED", "POSTPONED": "DEFERRED",
+}
+
+
+def normalize_review_notes(notes):
+    """Normalize harmless vocabulary aliases without changing review meaning."""
+    if not isinstance(notes, list):
+        return notes
+    normalized = []
+    for raw in notes:
+        if not isinstance(raw, dict):
+            normalized.append(raw)
+            continue
+        item = dict(raw)
+        severity = str(item.get("severity") or "").strip().upper()
+        status = str(item.get("status") or "").strip().upper()
+        item["severity"] = SEVERITY_ALIASES.get(severity, severity)
+        item["status"] = STATUS_ALIASES.get(status, status)
+        normalized.append(item)
+    return normalized
 
 
 def validate_review_notes(notes):

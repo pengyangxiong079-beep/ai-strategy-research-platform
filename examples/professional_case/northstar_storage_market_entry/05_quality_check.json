@@ -1,0 +1,9 @@
+{
+  "schema_version": "2.0",
+  "overall_status": "WARN",
+  "status": "WARN",
+  "quality_issues": [
+    {"rule_id": "FIXTURE_DATA_GAP", "severity": "WARNING", "status": "WARN", "reason": "真实渠道报价转化率尚未通过付费样板验证", "file": "04_report_data.json", "metric_id": "target_quote_conversion", "repair_type": "UPSTREAM_DATA_REQUIRED"}
+  ],
+  "is_test_fixture": true
+}

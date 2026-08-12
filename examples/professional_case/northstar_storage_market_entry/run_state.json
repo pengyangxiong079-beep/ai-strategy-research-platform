@@ -1,0 +1,42 @@
+{
+  "schema_version": "2.0",
+  "run_id": "public_fixture_professional_market_entry",
+  "revision_id": "rev_000",
+  "pipeline_version": "2.0",
+  "configuration": {"pipeline_version": "2.0", "strict_structured_output": true, "allow_legacy_agent_output": false, "provider": "fake"},
+  "topic": "北辰储能进入德国工商业储能市场（合成案例）",
+  "normalized_analysis_type": "MARKET_ENTRY",
+  "industry": "工商业储能",
+  "geography": "德国",
+  "analysis_date": "2026-08-12",
+  "base_template": "market_entry",
+  "industry_templates": ["general"],
+  "effective_templates": ["general", "market_entry"],
+  "current_stage": "dashboard",
+  "overall_status": "COMPLETED_WITH_WARNINGS",
+  "primary_action": "VIEW_RESULTS",
+  "artifacts": {},
+  "stages": {
+    "scope": {"status": "COMPLETE", "attempt": 1, "started_at": "2026-08-12T09:00:00+08:00", "completed_at": "2026-08-12T09:01:00+08:00", "input_artifacts": [], "output_artifacts": ["00_analysis_scope.json"], "validation_status": "PASS", "error_codes": [], "stale_reason": ""},
+    "data": {"status": "COMPLETE_WITH_WARNINGS", "attempt": 1, "started_at": "2026-08-12T09:01:00+08:00", "completed_at": "2026-08-12T09:02:00+08:00", "input_artifacts": [], "output_artifacts": ["data/observations.json"], "validation_status": "WARN", "error_codes": ["FIXTURE_DATA_GAP"], "stale_reason": ""},
+    "research": {"status": "COMPLETE", "attempt": 1, "started_at": "2026-08-12T09:02:00+08:00", "completed_at": "2026-08-12T09:03:00+08:00", "input_artifacts": [], "output_artifacts": ["research/claims.json"], "validation_status": "PASS", "error_codes": [], "stale_reason": ""},
+    "review": {"status": "COMPLETE", "attempt": 1, "started_at": "2026-08-12T09:03:00+08:00", "completed_at": "2026-08-12T09:04:00+08:00", "input_artifacts": [], "output_artifacts": [], "validation_status": "PASS", "error_codes": [], "stale_reason": ""},
+    "fact_check": {"status": "COMPLETE", "attempt": 1, "started_at": "2026-08-12T09:04:00+08:00", "completed_at": "2026-08-12T09:05:00+08:00", "input_artifacts": [], "output_artifacts": [], "validation_status": "PASS", "error_codes": [], "stale_reason": ""},
+    "human": {"status": "COMPLETE", "attempt": 1, "started_at": "2026-08-12T09:05:00+08:00", "completed_at": "2026-08-12T09:06:00+08:00", "input_artifacts": [], "output_artifacts": [], "validation_status": "PASS", "error_codes": [], "stale_reason": ""},
+    "strategy": {"status": "COMPLETE", "attempt": 1, "started_at": "2026-08-12T09:06:00+08:00", "completed_at": "2026-08-12T09:07:00+08:00", "input_artifacts": [], "output_artifacts": ["strategy/recommendations.json"], "validation_status": "PASS", "error_codes": [], "stale_reason": ""},
+    "report": {"status": "COMPLETE", "attempt": 1, "started_at": "2026-08-12T09:07:00+08:00", "completed_at": "2026-08-12T09:08:00+08:00", "input_artifacts": [], "output_artifacts": ["04_report_data.json"], "validation_status": "PASS", "error_codes": [], "stale_reason": ""},
+    "quality": {"status": "COMPLETE_WITH_WARNINGS", "attempt": 1, "started_at": "2026-08-12T09:08:00+08:00", "completed_at": "2026-08-12T09:09:00+08:00", "input_artifacts": [], "output_artifacts": ["05_quality_check.json"], "validation_status": "WARN", "error_codes": ["FIXTURE_DATA_GAP"], "stale_reason": ""},
+    "dashboard": {"status": "COMPLETE", "attempt": 1, "started_at": "2026-08-12T09:09:00+08:00", "completed_at": "2026-08-12T09:10:00+08:00", "input_artifacts": [], "output_artifacts": ["06_dashboard_data.json"], "validation_status": "PASS", "error_codes": [], "stale_reason": ""}
+  },
+  "quality_summary": {"status": "PASS_WITH_WARNINGS", "blocking": 0, "warnings": 1, "resolved": 0},
+  "dependency_state": {"scope": "CURRENT", "data": "CURRENT", "research": "CURRENT", "review": "CURRENT", "fact_check": "CURRENT", "human": "CURRENT", "strategy": "CURRENT", "report": "CURRENT", "quality": "CURRENT", "dashboard": "CURRENT"},
+  "repair_budget": {"stage_max": 2, "run_max": 6, "used": 0, "by_stage": {}},
+  "agent_calls": {"total": 0, "by_stage": {}},
+  "active_revision_id": "rev_000",
+  "events": [
+    {"at": "2026-08-12T09:00:00+08:00", "stage": "scope", "event": "RUN_CREATED"},
+    {"at": "2026-08-12T09:10:00+08:00", "stage": "dashboard", "event": "OFFLINE_FIXTURE_COMPLETED", "detail": "No Agent calls"}
+  ],
+  "created_at": "2026-08-12T09:00:00+08:00",
+  "updated_at": "2026-08-12T09:10:00+08:00"
+}

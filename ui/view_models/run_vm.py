@@ -1,5 +1,9 @@
+from pathlib import Path
+
 from pipeline_v2.model import STAGE_ORDER
 from pipeline_v2.service import PipelineV2Service
+from ui.repository import read_json
+from ui.view_models.results_vm import _decision_brief
 
 
 def overview_view_model(run):
@@ -19,5 +23,9 @@ def overview_view_model(run):
         {"label": "质量状态", "value": quality.get("status", "PENDING")},
         {"label": "Revision", "value": run.get("revision_id", "rev_000")},
     ]
-    return {**run, "progress": complete / len(STAGE_ORDER), "primary_action": action, "summary_metrics": summaries, "recent_activity": events, "key_issues": issues[:3]}
-
+    report_data = read_json(Path(run["folder"]) / "04_report_data.json", {}) if run.get("folder") else {}
+    return {
+        **run, "progress": complete / len(STAGE_ORDER), "primary_action": action,
+        "summary_metrics": summaries, "recent_activity": events, "key_issues": issues[:3],
+        "decision_brief": _decision_brief(report_data) if report_data else None,
+    }

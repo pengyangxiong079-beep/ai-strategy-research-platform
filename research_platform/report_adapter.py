@@ -37,9 +37,15 @@ def _effective_value_type(row):
 
 def _metric_payload(row):
     metric_id = str(row.get("metric_id") or row.get("metric") or row.get("observation_id"))
-    confidence = str(row.get("confidence") or "MEDIUM").upper()
+    raw_confidence = row.get("confidence")
+    if isinstance(raw_confidence, (int, float)):
+        confidence = "HIGH" if raw_confidence >= 0.8 else "MEDIUM" if raw_confidence >= 0.5 else "LOW"
+    else:
+        confidence = str(raw_confidence or "MEDIUM").upper()
     if confidence not in {"HIGH", "MEDIUM", "LOW"}:
         confidence = "MEDIUM"
+    verification_status = str(row.get("verification_status") or "NOT_CHECKED").upper()
+    temporal_status = str(row.get("temporal_status") or "UNKNOWN").upper()
     return {
         "metric_id": f"OBS_{row.get('observation_id')}",
         "label": METRIC_LABELS.get(metric_id, row.get("metric") or metric_id),
@@ -49,6 +55,8 @@ def _metric_payload(row):
         "geography": row.get("geography") or None,
         "period": row.get("period") or None,
         "value_type": _effective_value_type(row),
+        "verification_status": verification_status,
+        "temporal_status": temporal_status,
         "metric_definition": row.get("metric_definition") or metric_id,
         "channel_scope": row.get("channel") or None,
         "entity_scope": row.get("entity_scope") or row.get("entity") or None,

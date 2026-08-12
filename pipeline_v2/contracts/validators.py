@@ -32,7 +32,21 @@ def data_gate(payload, context):
             errors.append(issue("DATA_SOURCE_LINK", "Observation must link to Source Registry", stage="data", artifact="data/observations.json", location=f"/observations/{index}/source_id", entity_id=row.get("observation_id", ""), repair_type="UPSTREAM_DATA_REQUIRED"))
     for dataset in coverage.get("datasets", []):
         if dataset.get("priority") == "CRITICAL" and dataset.get("status") == "INSUFFICIENT":
-            errors.append(issue("DATA_CRITICAL_INSUFFICIENT", "CRITICAL dataset is insufficient", stage="data", artifact="data/data_coverage.json", entity_id=dataset.get("dataset_id", ""), repair_type="UPSTREAM_DATA_REQUIRED"))
+            dataset_id = dataset.get("dataset_id", "")
+            gaps = dataset.get("gaps") or []
+            gap_text = "; ".join(
+                str(row.get("reason") or row.get("missing_field") or row.get("description") or row)
+                for row in gaps
+            ) or "No gap details supplied"
+            errors.append(issue(
+                "DATA_CRITICAL_INSUFFICIENT",
+                f"CRITICAL dataset {dataset_id} is insufficient: {gap_text}",
+                stage="data", artifact="data/data_coverage.json",
+                location=f"/datasets/{dataset_id}", entity_id=dataset_id,
+                expected={"status": "PASS"},
+                actual={"status": dataset.get("status"), "observation_count": dataset.get("observation_count", 0), "gaps": gaps},
+                repair_type="UPSTREAM_DATA_REQUIRED",
+            ))
         elif dataset.get("priority") == "OPTIONAL" and dataset.get("status") != "PASS":
             warnings.append(issue("DATA_OPTIONAL_INSUFFICIENT", "OPTIONAL dataset is insufficient and does not block the pipeline", stage="data", artifact="data/data_coverage.json", entity_id=dataset.get("dataset_id", ""), repair_type="HUMAN_REQUIRED", severity="WARNING"))
     return result(errors, warnings)

@@ -8,7 +8,14 @@ const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const outputsRoot = process.env.STRATEGY_OUTPUTS_ROOT
   ? resolve(process.env.STRATEGY_OUTPUTS_ROOT)
   : join(projectRoot, "outputs");
-const sampleRunsRoot = join(projectRoot, "examples", "sample_run");
+const exampleRuns = [
+  { name: "sample_run", folder: join(projectRoot, "examples", "sample_run"), synthesizeManifest: true },
+  {
+    name: "professional_market_entry",
+    folder: join(projectRoot, "examples", "professional_case", "northstar_storage_market_entry"),
+    synthesizeManifest: false,
+  },
+];
 const publicData = join(projectRoot, "dashboard-web", "public", "data");
 const sensitiveKey = /token|cookie|authorization|credential|secret|password|thread.?id|environment|account/i;
 
@@ -95,6 +102,22 @@ function normalizeReportData(reportData) {
   };
 }
 
+function applyFixtureEvidence(reportData, evidence = []) {
+  const byFact = new Map(evidence.map((item) => [item.fact_id, item.verification_status]));
+  const rank = { UNSUPPORTED: 4, NOT_CHECKED: 3, PARTIAL: 2, SUPPORTED: 1 };
+  const enrich = (metric) => {
+    const statuses = (metric.source_fact_ids ?? []).map((factId) => byFact.get(factId)).filter(Boolean);
+    const verification = statuses.sort((left, right) => (rank[right] ?? 9) - (rank[left] ?? 9))[0] ?? metric.verification_status;
+    return { ...metric, verification_status: verification };
+  };
+  return {
+    ...reportData,
+    kpis: (reportData.kpis ?? []).map(enrich),
+    time_series: (reportData.time_series ?? []).map((series) => ({ ...series, points: (series.points ?? []).map(enrich) })),
+    market_segments: (reportData.market_segments ?? []).map((segment) => ({ ...segment, metrics: (segment.metrics ?? []).map(enrich) })),
+  };
+}
+
 function dataFilename(runId, revision) {
   return `${createHash("sha256").update(runId).digest("hex").slice(0, 16)}-${revision}.json`;
 }
@@ -107,8 +130,21 @@ async function candidateBundle(runFolder, runManifest, scope, revision, sourceFo
   const qualityData = await readJson(join(sourceFolder, "05_quality_check.json"), {});
   const qualityStatus = qualityData.overall_status ?? qualityData.status ?? revisionManifest?.quality_check_status ?? dashboardSource.quality_status ?? runManifest.quality_check_status ?? "UNKNOWN";
   const reportData = portableReportData(reportDataSource, scope, dashboardSource);
+  const fixtureFallback = dashboardSource.meta?.is_test_fixture === true;
+  const normalizedReport = fixtureFallback
+    ? applyFixtureEvidence(normalizeReportData(reportData), dashboardSource.evidence)
+    : normalizeReportData(reportData);
   const normalizedDashboard = {
     ...dashboardSource,
+    metrics: fixtureFallback && !(dashboardSource.metrics ?? []).length ? normalizedReport.kpis : dashboardSource.metrics,
+    time_series: fixtureFallback && !(dashboardSource.time_series ?? []).length ? normalizedReport.time_series : dashboardSource.time_series,
+    comparisons: fixtureFallback && !(dashboardSource.comparisons ?? []).length ? normalizedReport.competitor_comparisons : dashboardSource.comparisons,
+    segments: fixtureFallback && !(dashboardSource.segments ?? []).length ? normalizedReport.market_segments : dashboardSource.segments,
+    risks: fixtureFallback && !(dashboardSource.risks ?? []).length ? normalizedReport.risks : dashboardSource.risks,
+    opportunities: fixtureFallback && !(dashboardSource.opportunities ?? []).length ? normalizedReport.opportunities : dashboardSource.opportunities,
+    recommendations: fixtureFallback && !(dashboardSource.recommendations ?? []).length ? normalizedReport.recommendations : dashboardSource.recommendations,
+    initiatives: fixtureFallback && !(dashboardSource.initiatives ?? []).length ? normalizedReport.roadmap : dashboardSource.initiatives,
+    scenarios: fixtureFallback && !(dashboardSource.scenarios ?? []).length ? normalizedReport.scenarios : dashboardSource.scenarios,
     quality_status: qualityStatus,
     scope,
     report_version: dashboardSource.report_version ?? revision,
@@ -116,7 +152,7 @@ async function candidateBundle(runFolder, runManifest, scope, revision, sourceFo
     components: dashboardSource.components ?? [],
     excluded_metrics: dashboardSource.excluded_metrics ?? [],
     validation_errors: dashboardSource.validation_errors ?? [],
-    report_data: normalizeReportData(reportData),
+    report_data: normalizedReport,
   };
   return sanitize({
     schema_version: "1.0",
@@ -140,7 +176,7 @@ let runNames = [];
 try { runNames = await readdir(outputsRoot); } catch { runNames = []; }
 const runFolders = [
   ...runNames.map((name) => ({ name, folder: join(outputsRoot, name), isSample: false })),
-  { name: "sample_run", folder: sampleRunsRoot, isSample: true },
+  ...exampleRuns.map((item) => ({ ...item, isSample: item.synthesizeManifest })),
 ];
 
 for (const runEntry of runFolders) {

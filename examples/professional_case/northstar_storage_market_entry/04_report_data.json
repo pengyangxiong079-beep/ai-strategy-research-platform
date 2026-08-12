@@ -1,0 +1,75 @@
+{
+  "schema_version": "1.0",
+  "scope": {
+    "topic": "北辰储能进入德国工商业储能市场（合成案例）",
+    "analysis_type": "MARKET_ENTRY",
+    "industry": "工商业储能",
+    "geography": "德国",
+    "analysis_date": "2026-08-12",
+    "time_horizon": "2027-2030",
+    "selected_template": "general",
+    "is_test_fixture": true
+  },
+  "executive_summary": "建议北辰储能采用伙伴主导、分阶段进入，而不是立即建设直营体系。2027年先与两家区域能源服务商完成2个付费样板项目；仅当样板毛利率不低于22%、报价转化率不低于18%、交付周期不超过16周时，才进入第二阶段扩张。该结论基于合成数据，尚未验证真实渠道转化率，因此属于有条件推进。",
+  "kpis": [
+    {"metric_id": "serviceable_demand_2027", "label": "可服务需求", "value": 2.4, "unit": "GWh", "currency": null, "geography": "德国", "period": "2027", "value_type": "FORECAST", "metric_definition": "德国工商业储能年度新增可服务容量（合成预测）", "comparability_group": "DE|C&I BESS|annual additions", "source_fact_ids": ["F1"], "source_grade": "B", "confidence": "MEDIUM"},
+    {"metric_id": "target_gross_margin", "label": "样板毛利率门槛", "value": 22, "unit": "%", "currency": null, "geography": "德国", "period": "2027", "value_type": "TARGET", "metric_definition": "含本地集成与质保准备金的项目毛利率门槛", "comparability_group": "DE|pilot projects|gross margin", "source_fact_ids": ["F2"], "source_grade": "B", "confidence": "MEDIUM"},
+    {"metric_id": "target_quote_conversion", "label": "报价转化率门槛", "value": 18, "unit": "%", "currency": null, "geography": "德国", "period": "2027", "value_type": "TARGET", "metric_definition": "合格商机转为付费订单的最低比例", "comparability_group": "DE|qualified pipeline|conversion", "source_fact_ids": ["F3"], "source_grade": "B", "confidence": "LOW"},
+    {"metric_id": "max_delivery_cycle", "label": "交付周期上限", "value": 16, "unit": "周", "currency": null, "geography": "德国", "period": "2027", "value_type": "TARGET", "metric_definition": "合同签署到商业运行的最长周期", "comparability_group": "DE|pilot projects|delivery cycle", "source_fact_ids": ["F4"], "source_grade": "A", "confidence": "HIGH"}
+  ],
+  "time_series": [
+    {"series_id": "serviceable_demand", "label": "德国工商业储能可服务需求（合成预测）", "chart_type": "LINE", "comparability_note": "相同地区、容量定义与年度新增口径", "points": [
+      {"metric_id": "demand_2026", "label": "可服务需求", "value": 1.8, "unit": "GWh", "currency": null, "geography": "德国", "period": "2026", "value_type": "ESTIMATE", "metric_definition": "年度新增可服务容量", "comparability_group": "DE|C&I BESS|annual additions", "source_fact_ids": ["F1"], "source_grade": "B", "confidence": "MEDIUM"},
+      {"metric_id": "demand_2027", "label": "可服务需求", "value": 2.4, "unit": "GWh", "currency": null, "geography": "德国", "period": "2027", "value_type": "FORECAST", "metric_definition": "年度新增可服务容量", "comparability_group": "DE|C&I BESS|annual additions", "source_fact_ids": ["F1"], "source_grade": "B", "confidence": "MEDIUM"},
+      {"metric_id": "demand_2028", "label": "可服务需求", "value": 3.2, "unit": "GWh", "currency": null, "geography": "德国", "period": "2028", "value_type": "FORECAST", "metric_definition": "年度新增可服务容量", "comparability_group": "DE|C&I BESS|annual additions", "source_fact_ids": ["F1"], "source_grade": "B", "confidence": "MEDIUM"},
+      {"metric_id": "demand_2029", "label": "可服务需求", "value": 4.1, "unit": "GWh", "currency": null, "geography": "德国", "period": "2029", "value_type": "FORECAST", "metric_definition": "年度新增可服务容量", "comparability_group": "DE|C&I BESS|annual additions", "source_fact_ids": ["F1"], "source_grade": "B", "confidence": "LOW"},
+      {"metric_id": "demand_2030", "label": "可服务需求", "value": 5.0, "unit": "GWh", "currency": null, "geography": "德国", "period": "2030", "value_type": "FORECAST", "metric_definition": "年度新增可服务容量", "comparability_group": "DE|C&I BESS|annual additions", "source_fact_ids": ["F1"], "source_grade": "B", "confidence": "LOW"}
+    ]}
+  ],
+  "market_segments": [
+    {"segment_id": "manufacturing", "label": "制造业园区", "metrics": [{"metric_id": "segment_manufacturing", "label": "需求占比", "value": 46, "unit": "%", "currency": null, "geography": "德国", "period": "2027", "value_type": "ESTIMATE", "metric_definition": "可服务需求容量占比", "comparability_group": "DE|2027|segment share", "source_fact_ids": ["F5"], "source_grade": "B", "confidence": "MEDIUM"}]},
+    {"segment_id": "logistics", "label": "物流与冷链", "metrics": [{"metric_id": "segment_logistics", "label": "需求占比", "value": 31, "unit": "%", "currency": null, "geography": "德国", "period": "2027", "value_type": "ESTIMATE", "metric_definition": "可服务需求容量占比", "comparability_group": "DE|2027|segment share", "source_fact_ids": ["F5"], "source_grade": "B", "confidence": "MEDIUM"}]},
+    {"segment_id": "commercial", "label": "商业综合体", "metrics": [{"metric_id": "segment_commercial", "label": "需求占比", "value": 23, "unit": "%", "currency": null, "geography": "德国", "period": "2027", "value_type": "ESTIMATE", "metric_definition": "可服务需求容量占比", "comparability_group": "DE|2027|segment share", "source_fact_ids": ["F5"], "source_grade": "B", "confidence": "MEDIUM"}]}
+  ],
+  "competitor_comparisons": [
+    {"comparison_id": "entry_mode_investment", "metric_id": "capital_exposure_index", "entities": ["伙伴主导", "合资公司", "直营体系"], "metric": "初始资本暴露指数", "geography": "德国", "period": "2027", "unit": "指数", "currency": null, "comparable": true, "is_comparable": true, "comparability_issues": [], "metric_definition": "以直营体系=100标准化的两年投入指数", "comparison_basis": "相同两年范围、含销售与本地交付能力建设", "ranking_claim": false, "source_fact_ids": ["F6"], "values": [{"entity": "伙伴主导", "value": 35}, {"entity": "合资公司", "value": 62}, {"entity": "直营体系", "value": 100}]}
+  ],
+  "risks": [
+    {"item_id": "RISK_CHANNEL", "label": "渠道转化未验证", "description": "合作意向尚未形成付费订单，真实销售周期和转化率未知。", "severity": "HIGH", "timeframe": "进入前6个月", "owner": "德国市场负责人", "priority": "P0", "source_fact_ids": ["F3"]},
+    {"item_id": "RISK_MARGIN", "label": "本地化成本侵蚀毛利", "description": "并网适配、消防认证和质保准备金可能使样板毛利低于22%。", "severity": "HIGH", "timeframe": "样板期", "owner": "商业与交付联合团队", "priority": "P0", "source_fact_ids": ["F2", "F4"]},
+    {"item_id": "RISK_CONCENTRATION", "label": "伙伴集中度", "description": "单一渠道伙伴可能掌握客户关系并压缩议价空间。", "severity": "MEDIUM", "timeframe": "2027-2028", "owner": "渠道负责人", "priority": "P1", "source_fact_ids": ["F6"]}
+  ],
+  "opportunities": [
+    {"item_id": "OPP_MANUFACTURING", "label": "制造业园区先发切入", "description": "制造业园区占合成可服务需求的46%，且负荷管理场景更易定义价值。", "severity": null, "timeframe": "2027", "owner": "行业方案团队", "priority": "P0", "source_fact_ids": ["F5"]},
+    {"item_id": "OPP_PARTNER", "label": "伙伴模式降低沉没投入", "description": "相较直营，伙伴主导模式的两年资本暴露指数为35。", "severity": null, "timeframe": "2027-2028", "owner": "国际业务负责人", "priority": "P0", "source_fact_ids": ["F6"]}
+  ],
+  "recommendations": [
+    {"item_id": "REC_PARTNER_GATE", "label": "以伙伴主导模式有条件进入", "description": "先验证商业闭环，再决定是否扩张本地固定成本。", "rationale": "该路径在保留市场期权的同时，把最大不确定性——付费转化与本地交付成本——前置到低资本暴露的样板阶段。", "timeframe": "2027 Q1-Q4", "time_horizon": "12个月样板期", "owner": "国际业务负责人", "responsible_function": "国际业务与德国交付团队", "priority": "P0", "required_capabilities": ["本地并网集成", "伙伴赋能", "项目毛利核算"], "related_risks": ["RISK_CHANNEL", "RISK_MARGIN"], "related_opportunities": ["OPP_MANUFACTURING", "OPP_PARTNER"], "kpi": "2个付费样板；毛利率≥22%；报价转化率≥18%；交付周期≤16周", "source_fact_ids": ["F2", "F3", "F4", "F6"]},
+    {"item_id": "REC_SEGMENT", "label": "聚焦制造业园区，不做全行业铺开", "description": "用单一场景模板缩短方案设计和交付学习周期。", "rationale": "制造业园区在合成样本中需求占比最高，且价值主张更容易量化。", "timeframe": "2027 H1", "time_horizon": "6个月", "owner": "行业方案负责人", "responsible_function": "产品与解决方案", "priority": "P1", "required_capabilities": ["峰谷套利模型", "需量管理方案"], "related_risks": ["RISK_MARGIN"], "related_opportunities": ["OPP_MANUFACTURING"], "kpi": "标准方案覆盖80%的样板需求", "source_fact_ids": ["F5"]},
+    {"item_id": "REC_OPTION", "label": "保留第二渠道与退出条款", "description": "避免首个伙伴形成排他控制，并在门槛未达时停止扩张。", "rationale": "双渠道和明确暂停条件可以限制伙伴集中度及追加投入。", "timeframe": "合同签署前", "time_horizon": "3个月", "owner": "法务与渠道负责人", "responsible_function": "渠道与法务", "priority": "P1", "required_capabilities": ["渠道治理", "合作协议设计"], "related_risks": ["RISK_CONCENTRATION"], "related_opportunities": ["OPP_PARTNER"], "kpi": "无排他条款；至少2家有效伙伴", "source_fact_ids": ["F6"]}
+  ],
+  "scenarios": [
+    {"scenario_id": "SC_DOWN", "label": "下行情景", "base_period": "2027", "end_period": "2029", "value_type": "MODELLED", "starting_value": 2.4, "annual_points": [2.4, 2.7, 3.0], "assumptions": ["并网周期延长", "渠道转化率低于12%"], "formula": "前值×(1+12%)", "target_value": 3.0, "target_gap": -1.1, "trigger_conditions": ["首6个月无付费样板", "毛利率低于18%"], "risks": ["暂停扩张"], "source_fact_ids": ["F1", "F3"], "source_observation_ids": ["OBS1", "OBS3"], "confidence": "LOW", "points": [
+      {"metric_id": "sc_down_2027", "label": "下行情景", "value": 2.4, "unit": "GWh", "currency": null, "geography": "德国", "period": "2027", "value_type": "SCENARIO", "verification_status": "SUPPORTED", "temporal_status": "FUTURE_PLAN", "source_fact_ids": ["F1"], "source_grade": "B", "confidence": "LOW"},
+      {"metric_id": "sc_down_2029", "label": "下行情景", "value": 3.0, "unit": "GWh", "currency": null, "geography": "德国", "period": "2029", "value_type": "SCENARIO", "verification_status": "SUPPORTED", "temporal_status": "FUTURE_PLAN", "source_fact_ids": ["F1"], "source_grade": "B", "confidence": "LOW"}
+    ]},
+    {"scenario_id": "SC_BASE", "label": "基准情景", "base_period": "2027", "end_period": "2029", "value_type": "MODELLED", "starting_value": 2.4, "annual_points": [2.4, 3.2, 4.1], "assumptions": ["转化率达到18%", "交付周期不超过16周"], "formula": "采用合成需求曲线", "target_value": 4.1, "target_gap": 0, "trigger_conditions": ["两项样板门槛均达成"], "risks": ["按阶段扩张"], "source_fact_ids": ["F1", "F3", "F4"], "source_observation_ids": ["OBS1", "OBS3", "OBS4"], "confidence": "MEDIUM", "points": [
+      {"metric_id": "sc_base_2027", "label": "基准情景", "value": 2.4, "unit": "GWh", "currency": null, "geography": "德国", "period": "2027", "value_type": "SCENARIO", "verification_status": "SUPPORTED", "temporal_status": "FUTURE_PLAN", "source_fact_ids": ["F1"], "source_grade": "B", "confidence": "MEDIUM"},
+      {"metric_id": "sc_base_2029", "label": "基准情景", "value": 4.1, "unit": "GWh", "currency": null, "geography": "德国", "period": "2029", "value_type": "SCENARIO", "verification_status": "SUPPORTED", "temporal_status": "FUTURE_PLAN", "source_fact_ids": ["F1"], "source_grade": "B", "confidence": "MEDIUM"}
+    ]},
+    {"scenario_id": "SC_UP", "label": "上行情景", "base_period": "2027", "end_period": "2029", "value_type": "MODELLED", "starting_value": 2.4, "annual_points": [2.4, 3.6, 4.8], "assumptions": ["转化率高于24%", "伙伴复制速度快于计划"], "formula": "前值×(1+41%)", "target_value": 4.8, "target_gap": 0.7, "trigger_conditions": ["连续两个季度超额完成门槛"], "risks": ["交付能力过载"], "source_fact_ids": ["F1", "F4"], "source_observation_ids": ["OBS1", "OBS4"], "confidence": "LOW", "points": [
+      {"metric_id": "sc_up_2027", "label": "上行情景", "value": 2.4, "unit": "GWh", "currency": null, "geography": "德国", "period": "2027", "value_type": "SCENARIO", "verification_status": "SUPPORTED", "temporal_status": "FUTURE_PLAN", "source_fact_ids": ["F1"], "source_grade": "B", "confidence": "LOW"},
+      {"metric_id": "sc_up_2029", "label": "上行情景", "value": 4.8, "unit": "GWh", "currency": null, "geography": "德国", "period": "2029", "value_type": "SCENARIO", "verification_status": "SUPPORTED", "temporal_status": "FUTURE_PLAN", "source_fact_ids": ["F1"], "source_grade": "B", "confidence": "LOW"}
+    ]}
+  ],
+  "roadmap": [
+    {"item_id": "I1", "label": "伙伴与样板筛选", "start": "2027-Q1", "end": "2027-Q2", "status": "PLANNED", "description": "签约两家非排他伙伴并锁定两个付费样板。", "source_fact_ids": ["F3", "F6"]},
+    {"item_id": "I2", "label": "样板交付与门槛复盘", "start": "2027-Q2", "end": "2027-Q4", "status": "GATED", "description": "验证毛利、转化率和交付周期；任一门槛未达则暂停扩张。", "source_fact_ids": ["F2", "F3", "F4"]},
+    {"item_id": "I3", "label": "选择性扩张", "start": "2028-Q1", "end": "2028-Q4", "status": "CONDITIONAL", "description": "仅在门槛达成后复制到相邻工业区域。", "source_fact_ids": ["F1", "F5"]}
+  ],
+  "evidence_summary": {"verified": 6, "partial": 1, "unsupported": 0, "superseded": 0},
+  "data_gaps": [
+    {"gap_id": "GAP_CHANNEL_CONVERSION", "label": "真实渠道报价转化率尚未验证", "reason": "目前只有合成访谈和意向数据，无法证明18%的付费转化门槛可达。", "required_action": "在扩张决策前完成2个付费样板并累计至少20个合格商机"}
+  ],
+  "_meta": {"final_report_sha256": "11ed73b4ef970d0eefd27f1bcedafd68531686d110df1d40d87f2b1bd9723eb7", "observation_ids": ["OBS1", "OBS3", "OBS4"]}
+}

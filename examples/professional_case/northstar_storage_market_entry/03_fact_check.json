@@ -1,0 +1,16 @@
+{
+  "schema_version": "2.0",
+  "claims": [
+    {"claim_id": "CLM1", "display_id": "F1", "claim_type": "FORECAST", "text": "合成模型预测2027年可服务需求为2.4 GWh。", "observation_ids": ["OBS1"], "source_ids": ["SRC_FIXTURE_MODEL"], "verification_status": "SUPPORTED", "temporal_status": "FUTURE_PLAN", "source_grade_max": "GRADE_B", "status": "ACTIVE"},
+    {"claim_id": "CLM2", "display_id": "F2", "claim_type": "TARGET", "text": "22%是样板项目毛利率门槛。", "observation_ids": [], "source_ids": ["SRC_FIXTURE_MODEL"], "verification_status": "SUPPORTED", "temporal_status": "FUTURE_PLAN", "source_grade_max": "GRADE_B", "status": "ACTIVE"},
+    {"claim_id": "CLM3", "display_id": "F3", "claim_type": "TARGET", "text": "18%报价转化率门槛尚未通过付费样板验证。", "observation_ids": ["OBS3"], "source_ids": ["SRC_FIXTURE_MODEL"], "verification_status": "PARTIAL", "temporal_status": "FUTURE_PLAN", "source_grade_max": "GRADE_B", "status": "ACTIVE"},
+    {"claim_id": "CLM4", "display_id": "F4", "claim_type": "TARGET", "text": "16周是样板项目交付周期上限。", "observation_ids": ["OBS4"], "source_ids": ["SRC_FIXTURE_OPERATIONS"], "verification_status": "SUPPORTED", "temporal_status": "FUTURE_PLAN", "source_grade_max": "GRADE_A", "status": "ACTIVE"},
+    {"claim_id": "CLM5", "display_id": "F5", "claim_type": "ESTIMATE", "text": "制造业园区占合成可服务需求的46%。", "observation_ids": [], "source_ids": ["SRC_FIXTURE_MODEL"], "verification_status": "SUPPORTED", "temporal_status": "FUTURE_PLAN", "source_grade_max": "GRADE_B", "status": "ACTIVE"},
+    {"claim_id": "CLM6", "display_id": "F6", "claim_type": "ANALYST_JUDGMENT", "text": "伙伴主导模式的合成两年资本暴露指数为35。", "observation_ids": [], "source_ids": ["SRC_FIXTURE_OPERATIONS"], "verification_status": "SUPPORTED", "temporal_status": "FUTURE_PLAN", "source_grade_max": "GRADE_A", "status": "ACTIVE"}
+  ],
+  "observation_verifications": [
+    {"observation_id": "OBS1", "claim_id": "CLM1", "verification_status": "SUPPORTED", "temporal_status": "FUTURE_PLAN", "source_ids": ["SRC_FIXTURE_MODEL"]},
+    {"observation_id": "OBS3", "claim_id": "CLM3", "verification_status": "PARTIAL", "temporal_status": "FUTURE_PLAN", "source_ids": ["SRC_FIXTURE_MODEL"]},
+    {"observation_id": "OBS4", "claim_id": "CLM4", "verification_status": "SUPPORTED", "temporal_status": "FUTURE_PLAN", "source_ids": ["SRC_FIXTURE_OPERATIONS"]}
+  ]
+}

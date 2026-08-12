@@ -9,6 +9,23 @@ run = require_run()
 vm = quality_view_model(run)
 page_header("数据与质量", "集中处理数据覆盖、来源、质量问题和高级审计信息。")
 
+with st.container(horizontal=True):
+    st.metric("证据支持率", f"{vm['support_rate']:.0%}" if vm["support_rate"] is not None else "—", border=True)
+    st.metric("决策数据缺口", len(vm["decision_gaps"]), border=True)
+    st.metric("Blocking", len(vm["blocking"]), border=True)
+    st.metric("Warnings", len(vm["warnings"]), border=True)
+
+if vm["decision_gaps"]:
+    with st.container(border=True):
+        st.subheader("决策前必须关闭的缺口")
+        st.dataframe(
+            pd.DataFrame([{
+                "缺口": gap.get("label"), "为什么重要": gap.get("reason"),
+                "关闭动作": gap.get("required_action") or "待定义",
+            } for gap in vm["decision_gaps"]]),
+            hide_index=True,
+        )
+
 view = st.segmented_control("视图", ["数据覆盖", "来源", "质量问题", "Claim ledger"], default="数据覆盖", key="quality_view")
 
 if view == "数据覆盖":

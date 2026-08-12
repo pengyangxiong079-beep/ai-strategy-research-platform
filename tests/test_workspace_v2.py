@@ -9,6 +9,7 @@ from pipeline_v2.model import create_run_state, save_run_state
 from pipeline_v2.service import PipelineV2Service
 from pipeline_v2.orchestrator import PipelineV2Orchestrator
 from pipeline_v2.fake_agent_registry import FakeAgentRegistry
+from dashboard.schema import validate_dashboard_data, validate_report_data
 from ui.view_models.decisions_vm import decisions_view_model
 from ui.view_models.project_vm import project_view_model
 from ui.view_models.quality_vm import quality_view_model
@@ -79,6 +80,22 @@ def test_results_artifact_levels_and_one_revision_hides_comparison():
         assert results_view_model(run)["final_markdown"] == "# Final"
         assert len(results_view_model(run)["supporting"]) == 1
         assert revision_view_model(run)["show_comparison"] is False
+
+
+def test_professional_example_exposes_conditional_decision_and_quality_gate():
+    root = Path(__file__).resolve().parents[1] / "examples/professional_case"
+    run = PipelineV2Service(root).list_runs()[0]
+    results = results_view_model(run)
+    quality = quality_view_model(run)
+    overview = overview_view_model(run)
+    assert results["decision_brief"]["posture"] == "有条件推进"
+    assert results["decision_brief"]["primary"]["priority"] == "P0"
+    assert results["decision_brief"]["scenario_count"] == 3
+    assert len(quality["decision_gaps"]) == 1
+    assert quality["support_rate"] == 6 / 7
+    assert overview["decision_brief"]["critical_gap"]["gap_id"] == "GAP_CHANNEL_CONVERSION"
+    validate_report_data(json.loads(Path(run["folder"], "04_report_data.json").read_text(encoding="utf-8")))
+    validate_dashboard_data(json.loads(Path(run["folder"], "06_dashboard_data.json").read_text(encoding="utf-8")))
 
 
 def test_blocking_quality_view_model_and_legacy_fixture():

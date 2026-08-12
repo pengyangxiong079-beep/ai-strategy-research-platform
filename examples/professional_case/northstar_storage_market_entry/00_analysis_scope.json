@@ -1,0 +1,16 @@
+{
+  "schema_version": "2.0",
+  "topic": "北辰储能进入德国工商业储能市场（合成案例）",
+  "analysis_type_id": "MARKET_ENTRY",
+  "analysis_type": "MARKET_ENTRY",
+  "industry": "工商业储能",
+  "geography": "德国",
+  "analysis_date": "2026-08-12",
+  "time_horizon": "2027-2030",
+  "selected_template": "general",
+  "decision_question": "北辰储能是否应进入德国工商业储能市场，以及以何种方式和节奏进入？",
+  "required_sections": ["决策结论", "战略逻辑", "取舍与边界", "下一道决策门", "主要限制"],
+  "focus_questions": ["市场是否值得进入", "应采用何种进入模式", "什么条件下扩张或退出"],
+  "competitors": ["伙伴主导", "合资公司", "直营体系"],
+  "is_test_fixture": true
+}

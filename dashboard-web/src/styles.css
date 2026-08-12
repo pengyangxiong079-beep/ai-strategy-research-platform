@@ -102,6 +102,18 @@ main { width: min(1480px, calc(100% - 36px)); margin: 0 auto; padding: 30px 0 56
 .chart { width: 100%; min-width: 0; }
 .source-note { border-top: 1px solid var(--border); padding-top: 9px; }
 .narrative p { max-width: 88ch; line-height: 1.75; }
+.decision-brief { margin-bottom: 18px; padding: clamp(20px, 3vw, 30px); color: #f8fafc; background: linear-gradient(135deg, #10233f 0%, #173b68 100%); border-radius: 12px; box-shadow: var(--shadow); }
+.decision-brief header { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; }
+.decision-brief header span { color: #93c5fd; font-size: .68rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.decision-brief h2 { max-width: 38ch; margin: 7px 0 0; font-size: clamp(1.25rem, 2.4vw, 1.8rem); line-height: 1.28; }
+.decision-posture { flex: 0 0 auto; padding: 7px 11px; border: 1px solid color-mix(in srgb, currentColor 35%, transparent); border-radius: 999px; font-size: .76rem; }
+.decision-posture.conditional { color: #fde68a; background: rgb(180 83 9 / 25%); }
+.decision-posture.ready { color: #a7f3d0; background: rgb(5 150 105 / 25%); }
+.decision-rationale { max-width: 88ch; margin: 16px 0 20px; color: #dbeafe; line-height: 1.7; }
+.decision-brief dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin: 0; overflow: hidden; border: 1px solid rgb(255 255 255 / 16%); border-radius: 8px; background: rgb(255 255 255 / 16%); }
+.decision-brief dl div { padding: 13px; background: rgb(15 35 63 / 85%); }
+.decision-brief dt { color: #93c5fd; font-size: .68rem; font-weight: 750; }
+.decision-brief dd { margin: 6px 0 0; font-size: .82rem; line-height: 1.5; overflow-wrap: anywhere; }
 
 .empty-state { min-height: 150px; border: 1px dashed var(--border); border-radius: 8px; background: var(--surface-muted); padding: 32px; display: grid; place-content: center; text-align: center; color: var(--muted); }
 .empty-state strong { color: var(--text); }
@@ -129,6 +141,11 @@ main { width: min(1480px, calc(100% - 36px)); margin: 0 auto; padding: 30px 0 56
 .value-chain article { position: relative; padding: 16px; background: var(--surface-muted); border: 1px solid var(--border); border-radius: 7px; }
 .value-chain article > span { display: inline-grid; place-items: center; width: 24px; height: 24px; margin-bottom: 10px; border-radius: 50%; background: var(--accent); color: white; font-size: .72rem; }
 .value-chain article p { color: var(--muted); line-height: 1.5; }
+.scenario-briefs { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 12px; }
+.scenario-briefs article { padding: 13px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface-muted); }
+.scenario-briefs article > div { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.scenario-briefs p { margin: 9px 0 0; color: var(--muted); font-size: .78rem; line-height: 1.5; }
+.scenario-briefs b { display: block; margin-bottom: 2px; color: var(--text); font-size: .68rem; }
 
 .comparison-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 18px; }
 .status-compare { display: flex; gap: 14px; align-items: center; padding: 14px 18px; margin-bottom: 18px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
@@ -148,6 +165,7 @@ th { position: sticky; top: 0; background: var(--surface-muted); color: var(--mu
   .dashboard-grid, .two-column, .page-widgets { grid-template-columns: 1fr; }
   .widget-block { grid-column: 1 !important; }
   .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .decision-brief dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 620px) {
@@ -163,6 +181,8 @@ th { position: sticky; top: 0; background: var(--surface-muted); color: var(--mu
   .timeline-item::before, .timeline-item::after { display: none; }
   .timeline-item > div:last-child { padding-left: 0; }
   .chart { min-height: 300px; }
+  .decision-brief header { flex-direction: column; }
+  .decision-brief dl { grid-template-columns: 1fr; }
 }
 
 @media print {

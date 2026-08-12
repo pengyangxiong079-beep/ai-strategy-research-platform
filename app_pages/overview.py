@@ -12,6 +12,17 @@ with st.container(horizontal=True):
     for item in vm["summary_metrics"]:
         st.metric(item["label"], item["value"], border=True)
 
+brief = vm.get("decision_brief")
+if brief:
+    with st.container(border=True):
+        st.badge(brief["posture"], color="orange" if brief["critical_gap"] else "green", icon=":material/strategy:")
+        primary = brief["primary"]
+        st.subheader(primary.get("label") or primary.get("title") or "战略建议待形成")
+        st.write(primary.get("rationale") or primary.get("description") or "暂无结构化建议说明。")
+        if brief["critical_gap"]:
+            gap = brief["critical_gap"]
+            st.caption(f"决策护栏：{gap.get('label')} · {gap.get('required_action') or gap.get('reason')}")
+
 st.subheader("研究进度")
 workflow_stepper(vm.get("stages", {}), vm.get("current_stage"))
 st.progress(vm["progress"], text=f"已完成 {vm['progress']:.0%}")
@@ -45,4 +56,3 @@ with right:
 
 if run.get("legacy"):
     st.info("这是历史V1运行：当前以只读Legacy视图打开，不会修改原文件。", icon=":material/history:")
-

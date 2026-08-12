@@ -68,7 +68,7 @@ export function ScenarioChart({ scenarios }: { scenarios: Scenario[] }) {
     series: usable.map((scenario) => ({ name: scenario.label, type: "line", lineStyle: { type: "dashed" }, data: periods.map((period) => scenario.points?.find((point) => point.period === period)?.value ?? null) })),
   } : null, [usable, periods]);
   if (!option) return <EmptyState reason="缺少保守、基准或乐观情景的结构化假设与至少两个时间点。" />;
-  return <section className="panel"><header><h2>情景分析</h2><p>虚线表示情景或未来计划；不是历史事实</p></header><EChart option={option} ariaLabel="战略情景趋势图" /></section>;
+  return <section className="panel"><header><h2>情景分析</h2><p>虚线表示情景或未来计划；不是历史事实</p></header><EChart option={option} ariaLabel="战略情景趋势图" /><div className="scenario-briefs">{usable.map((scenario) => <article key={scenario.scenario_id}><div><strong>{scenario.label}</strong><span className="badge">{scenario.confidence ?? "置信度待评估"}</span></div><p><b>关键假设</b>{scenario.assumptions?.join("；") || "待补充"}</p><p><b>触发条件</b>{scenario.trigger_conditions?.join("；") || "待补充"}</p></article>)}</div><p className="source-note">情景依据：{[...new Set(usable.flatMap((item) => item.source_fact_ids))].join("、")}</p></section>;
 }
 
 export function WaterfallChart({ metrics }: { metrics: Metric[] }) {

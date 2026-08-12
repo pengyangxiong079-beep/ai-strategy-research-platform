@@ -1,0 +1,7 @@
+{
+  "schema_version": "2.0",
+  "claims": [
+    {"claim_id": "CLM1", "display_id": "F1", "claim_type": "FORECAST", "text": "合成模型预测德国工商业储能可服务需求从2027年2.4 GWh增长至2030年5.0 GWh。", "verification_status": "SUPPORTED", "temporal_status": "FUTURE_PLAN", "source_grade_max": "GRADE_B", "source_ids": ["SRC_FIXTURE_MODEL"], "observation_ids": ["OBS1"], "status": "ACTIVE"},
+    {"claim_id": "CLM3", "display_id": "F3", "claim_type": "TARGET", "text": "18%的报价转化率是进入第二阶段的门槛，尚未由真实付费订单验证。", "verification_status": "PARTIAL", "temporal_status": "FUTURE_PLAN", "source_grade_max": "GRADE_B", "source_ids": ["SRC_FIXTURE_MODEL"], "observation_ids": ["OBS3"], "status": "ACTIVE"}
+  ]
+}

@@ -6,7 +6,7 @@ from pipeline_v2.contracts import validate_stage
 from pipeline_v2.orchestrator import PipelineV2Orchestrator
 from pipeline_v2.quality import aggregate_quality
 from pipeline_v2.report_protocol import hash_consistent, report_data_payload, render_content_blocks
-from pipeline_v2.review import validate_review_notes
+from pipeline_v2.review import normalize_review_notes, validate_review_notes
 from pipeline_v2.revision import RevisionExecutor, plan_revision
 from pipeline_v2.service import PipelineV2Service
 from pipeline_v2.agent_outputs import persist_review_model
@@ -46,6 +46,17 @@ def test_review_range_id_is_rejected_as_one_invalid_id():
         "required_action": "split into atomic issues", "status": "OPEN",
     }])
     assert [row["rule_id"] for row in errors] == ["REVIEW_ID_RANGE_FORBIDDEN"]
+
+
+def test_review_safe_vocabulary_aliases_are_normalized_before_validation():
+    notes = normalize_review_notes([{
+        "review_id": "R1", "severity": "BLOCKER", "category": "evidence",
+        "issue": "Material evidence gap", "evidence": "CLM_1",
+        "required_action": "Narrow the claim", "status": "PENDING",
+    }])
+    assert notes[0]["severity"] == "CRITICAL"
+    assert notes[0]["status"] == "OPEN"
+    assert validate_review_notes(notes) == []
 
 
 def test_legacy_review_agent_fields_are_normalized_to_canonical_contract(tmp_path):
@@ -88,6 +99,21 @@ def test_coverage_count_mismatch_blocks_data_gate():
     gate = validate_stage("data", {"observations": []}, {"sources": [], "sufficiency": {"observation_count": 4, "datasets": []}})
     assert not gate.can_continue
     assert {row["rule_id"] for row in gate.errors} >= {"DATA_COVERAGE_COUNT_MISMATCH", "DATA_COVERAGE_WITHOUT_OBSERVATIONS"}
+
+
+def test_critical_data_gap_has_actionable_dataset_diagnostics():
+    gate = validate_stage("data", {"observations": []}, {"sources": [], "sufficiency": {
+        "observation_count": 0,
+        "datasets": [{
+            "dataset_id": "financial_time_series", "priority": "CRITICAL",
+            "status": "INSUFFICIENT", "observation_count": 1,
+            "gaps": [{"reason": "Need a second comparable fiscal period"}],
+        }],
+    }})
+    issue = next(row for row in gate.errors if row["rule_id"] == "DATA_CRITICAL_INSUFFICIENT")
+    assert issue["location"] == "/datasets/financial_time_series"
+    assert issue["actual"]["observation_count"] == 1
+    assert "second comparable fiscal period" in issue["reason"]
 
 
 def test_structured_scenarios_fact_tags_and_hash_are_deterministic():

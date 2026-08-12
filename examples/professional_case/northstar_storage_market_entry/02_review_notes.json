@@ -1,0 +1,6 @@
+{
+  "schema_version": "2.0",
+  "issues": [
+    {"review_id": "R1", "severity": "MEDIUM", "category": "decision_boundary", "issue": "进入建议必须明确表述为有条件推进。", "evidence": "渠道转化率只有部分支持，尚无付费样板。", "required_action": "保留扩张门槛、暂停条件和合成数据披露。", "status": "RESOLVED"}
+  ]
+}

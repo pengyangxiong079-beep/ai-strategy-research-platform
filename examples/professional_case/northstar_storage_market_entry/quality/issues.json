@@ -1,0 +1,6 @@
+{
+  "schema_version": "2.0",
+  "issues": [
+    {"rule_id": "FIXTURE_DATA_GAP", "stage": "data", "artifact": "04_report_data.json", "location": "/data_gaps/0", "entity_id": "GAP_CHANNEL_CONVERSION", "reason": "真实渠道报价转化率尚未验证", "severity": "WARNING", "repair_type": "UPSTREAM_DATA_REQUIRED", "resolved": false}
+  ]
+}

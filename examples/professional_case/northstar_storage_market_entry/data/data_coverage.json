@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0",
+  "overall_status": "PARTIAL",
+  "observation_count": 3,
+  "datasets": [
+    {"dataset_id": "market_demand", "priority": "CRITICAL", "status": "PASS", "observation_count": 1, "entity_count": 1, "periods": ["2026", "2027", "2028", "2029", "2030"], "comparability_rate": 1, "dashboard_readiness": {"TimeSeriesChart": true}, "gaps": []},
+    {"dataset_id": "channel_conversion", "priority": "CRITICAL", "status": "PARTIAL", "observation_count": 1, "entity_count": 1, "periods": ["2027"], "comparability_rate": null, "dashboard_readiness": {"KpiSummary": true}, "gaps": [{"gap_id": "GAP_CHANNEL_CONVERSION"}]},
+    {"dataset_id": "delivery_cycle", "priority": "IMPORTANT", "status": "PASS", "observation_count": 1, "entity_count": 1, "periods": ["2027"], "comparability_rate": null, "dashboard_readiness": {"KpiSummary": true}, "gaps": []}
+  ]
+}

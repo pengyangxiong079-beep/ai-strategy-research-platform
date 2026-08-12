@@ -170,6 +170,7 @@ export interface Scenario {
   label: string;
   assumptions?: string[];
   trigger_conditions?: string[];
+  confidence?: "HIGH" | "MEDIUM" | "LOW" | number | null;
   points?: Metric[];
   source_fact_ids: string[];
 }
