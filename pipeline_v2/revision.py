@@ -12,11 +12,14 @@ from .model import STAGE_ORDER, load_run_state, now_iso, save_run_state
 from .orchestrator import AGENT_STAGES, PipelineV2Orchestrator
 
 
-REVISION_TYPES = {"LOCAL_REPAIR", "STRATEGY_ONLY", "FACT_VERIFICATION", "FULL_RESEARCH"}
+REVISION_TYPES = {"LOCAL_REPAIR", "STRATEGY_ONLY", "FACT_VERIFICATION", "FULL_RESEARCH", "TECHNICAL_RETRY", "FACT_CHECK_CONTRACT_REVALIDATION", "STRATEGY_CONTRACT_REVALIDATION", "TARGETED_GAP_SEARCH"}
 EXECUTION_BY_TYPE = {
     "LOCAL_REPAIR": ["report", "quality", "dashboard"],
     "STRATEGY_ONLY": ["strategy", "report", "quality", "dashboard"],
     "FACT_VERIFICATION": ["fact_check", "human", "strategy", "report", "quality", "dashboard"],
+    "FACT_CHECK_CONTRACT_REVALIDATION": ["human", "strategy", "report", "quality", "dashboard"],
+    "STRATEGY_CONTRACT_REVALIDATION": ["report", "quality", "dashboard"],
+    "TARGETED_GAP_SEARCH": ["data", "research", "review", "fact_check", "human", "strategy", "report", "quality", "dashboard"],
 }
 
 
@@ -91,16 +94,25 @@ def plan_revision(run_folder, revision_type: str, *, requested_changes=(),
         execution = (["scope"] if scope_changed else []) + [
             "data", "research", "review", "fact_check", "human", "strategy", "report", "quality", "dashboard"
         ]
+    elif revision_type == "TECHNICAL_RETRY":
+        failed_stage = state.get("current_stage")
+        if state.get("overall_status") != "FAILED_TECHNICAL" or failed_stage not in AGENT_STAGES:
+            raise ValueError("TECHNICAL_RETRY requires a FAILED_TECHNICAL Agent stage")
+        execution = list(STAGE_ORDER[STAGE_ORDER.index(failed_stage):])
     else:
         execution = list(EXECUTION_BY_TYPE[revision_type])
     preserved = [x for x in STAGE_ORDER if x not in execution]
     affected = [str(x).strip() for x in affected_object_ids if str(x).strip()]
-    requires_human = revision_type == "FULL_RESEARCH" or (revision_type == "FACT_VERIFICATION" and bool(affected))
+    requires_human = revision_type in {"FULL_RESEARCH", "TECHNICAL_RETRY", "FACT_CHECK_CONTRACT_REVALIDATION", "TARGETED_GAP_SEARCH"} or (revision_type == "FACT_VERIFICATION" and bool(affected))
     changed = {
         "LOCAL_REPAIR": ["strategy/report_model.json"],
         "STRATEGY_ONLY": ["strategy/recommendations.json", "strategy/report_model.json"],
         "FACT_VERIFICATION": ["fact_check/verified_claims.json"],
         "FULL_RESEARCH": ["00_analysis_scope.json", "data/source_registry.json", "data/observations.json"],
+        "TECHNICAL_RETRY": [f"stage:{state.get('current_stage')}"],
+        "FACT_CHECK_CONTRACT_REVALIDATION": ["fact_check/verified_claims.json", "03_fact_check.json"],
+        "STRATEGY_CONTRACT_REVALIDATION": ["strategy/recommendations.json", "strategy/report_model.json"],
+        "TARGETED_GAP_SEARCH": ["data/source_registry.json", "data/observations.json", "data/sufficiency.json"],
     }[revision_type]
     plan = RevisionPlan(
         revision_id=next_revision_id(folder),
@@ -126,13 +138,15 @@ class RevisionExecutor:
     def __init__(self, orchestrator: PipelineV2Orchestrator):
         self.orchestrator = orchestrator
 
-    def create(self, base_folder, plan: RevisionPlan, *, updated_scope: dict | None = None) -> Path:
+    def create(self, base_folder, plan: RevisionPlan, *, updated_scope: dict | None = None,
+               source_folder=None) -> Path:
         base = Path(base_folder)
         revision = base / "revisions" / plan.revision_id
         if revision.exists():
             raise FileExistsError(f"Revision已存在：{plan.revision_id}")
         revision.mkdir(parents=True)
-        self._copy_base(base, revision)
+        source = Path(source_folder) if source_folder else base
+        self._copy_base(source, revision)
         state = load_run_state(revision)
         state["revision_id"] = plan.revision_id
         state["overall_status"] = "REVISION_IN_PROGRESS"
@@ -157,11 +171,77 @@ class RevisionExecutor:
             "final_status": "CREATED", "active": False,
             "rerun_stages": plan.execution_stages, "preserved_stages": plan.preserved_stages,
             "invalidated_artifacts": plan.changed_artifacts,
-            "input_hashes": _artifact_hashes(base), "output_hashes": {}, "error_message": "",
+            "input_hashes": _artifact_hashes(source), "output_hashes": {}, "error_message": "",
             "scope_diff": plan.scope_diff, "data_as_of_date": plan.data_as_of_date,
         })
         self._save_execution(revision, plan, "CREATED", [], plan.execution_stages)
         return revision
+
+    def create_targeted_gap_search(self, base_folder, source_folder, targets: list[dict],
+                                   *, max_rounds=2) -> tuple[RevisionPlan, Path]:
+        """Create an auditable revision that searches only selected data gaps."""
+        base, source = Path(base_folder), Path(source_folder)
+        state = load_run_state(source)
+        if not state or state.get("pipeline_version") != "2.0":
+            raise ValueError("Targeted gap search requires a Pipeline V2 source run")
+        if any(
+            row.get("status") == "RUNNING"
+            for name, row in state.get("stages", {}).items() if name in AGENT_STAGES
+        ):
+            raise RuntimeError("An Agent stage is already running; wait before starting targeted gap search")
+        prior_rounds = sum(
+            1 for marker_path in (base / "revisions").glob("rev_*/data/targeted_gap_search.json")
+            if _read(marker_path, {}).get("status") in {"RUNNING", "COMPLETED"}
+        )
+        max_rounds = max(0, int(max_rounds))
+        if prior_rounds >= max_rounds:
+            raise RuntimeError(
+                f"Targeted gap search limit reached ({prior_rounds}/{max_rounds}); "
+                "accept the evidence boundary or create a manually scoped revision"
+            )
+        normalized = [row for row in targets if row.get("dataset_id")]
+        if not normalized:
+            raise ValueError("No eligible CRITICAL/IMPORTANT gap is available")
+        plan = plan_revision(
+            base, "TARGETED_GAP_SEARCH",
+            requested_changes=["Search only confirmed CRITICAL/IMPORTANT evidence gaps"],
+            affected_object_ids=[row.get("gap_id") or row["dataset_id"] for row in normalized],
+        )
+        plan.base_revision_id = state.get("revision_id", "rev_000")
+        _write(base / "revision_plans" / f"{plan.revision_id}.json", plan.to_dict())
+        revision = self.create(base, plan, source_folder=source)
+        # A new Review/Fact Check result requires a fresh decision.  Prior
+        # feedback remains preserved in the source revision's audit trail.
+        _write(revision / "human/feedback.json", {"schema_version": "2.0", "feedback": []})
+        sufficiency = _read(source / "data/sufficiency.json", {})
+        requirements = _read(source / "data/requirements.json", {})
+        requirement_map = {
+            row.get("dataset_id"): row for row in requirements.get("datasets", [])
+            if isinstance(row, dict) and row.get("dataset_id")
+        }
+        target_ids = list(dict.fromkeys(row["dataset_id"] for row in normalized))
+        queries = []
+        for row in normalized:
+            for raw in row.get("recommended_queries") or []:
+                query = dict(raw) if isinstance(raw, dict) else {"query": str(raw), "query_text": str(raw)}
+                if query.get("query_text") or query.get("query"):
+                    queries.append(query)
+        previous_marker = _read(source / "data/targeted_gap_search.json", {})
+        marker = {
+            "schema_version": "1.0", "status": "REQUESTED", "requested_at": now_iso(),
+            "target_dataset_ids": target_ids, "targets": normalized,
+            "previous_rounds": int(sufficiency.get("gap_search_rounds_completed") or 0),
+            "attempt_count": max(prior_rounds, int(previous_marker.get("attempt_count") or 0)),
+            "repair_context": {
+                "mode": "TARGETED_GAP_SEARCH", "target_dataset_ids": target_ids,
+                "targets": [{**row, "requirement": requirement_map.get(row["dataset_id"], {})} for row in normalized],
+                "queries": queries,
+                "source_priority": ["official disclosures", "regulatory filings", "investor relations", "primary documentation"],
+                "completion_rule": "Search only confirmed targets; merge verified additions with existing evidence; keep unresolved gaps explicit.",
+            },
+        }
+        _write(revision / "data/targeted_gap_search.json", marker)
+        return plan, revision
 
     def execute(self, base_folder, revision_id: str, *, human_feedback: dict | None = None) -> dict:
         revision = Path(base_folder) / "revisions" / revision_id
@@ -208,15 +288,96 @@ class RevisionExecutor:
                 return control
         execution.update(plan_status="COMPLETED", current_stage=None, checkpoint_at=now_iso())
         _write(revision / "execution_state.json", execution)
+        state = load_run_state(revision)
+        state["overall_status"] = (
+            "COMPLETED_WITH_WARNINGS"
+            if state.get("quality_summary", {}).get("warnings") else "COMPLETED"
+        )
+        state["current_stage"] = "quality"
+        state["primary_action"] = "VIEW_RESULTS"
+        state.setdefault("events", []).append({
+            "at": now_iso(), "stage": "quality", "event": "REVISION_COMPLETED",
+            "revision_id": revision_id,
+        })
+        self.orchestrator._save(revision, state)
         self._update_manifest(revision, "COMPLETED", True)
         self._activate(Path(base_folder), revision_id)
         return execution
+
+    def recover_blocked_fact_check(self, base_folder, *, feedback_source=None) -> dict:
+        """Recover a legacy contract false-negative from its saved candidate."""
+        base = Path(base_folder)
+        state = load_run_state(base)
+        if state.get("overall_status") != "BLOCKED_QUALITY" or state.get("current_stage") != "fact_check":
+            raise ValueError("Local Fact Check recovery requires a run blocked at fact_check")
+        candidates = sorted(
+            path for path in (base / "quality/candidates").glob("fact_check_attempt_*.json")
+            if not path.stem.endswith("_invalid")
+        )
+        if not candidates:
+            raise ValueError("No structured Fact Check candidate is available for local recovery")
+        candidate = _read(candidates[-1], {})
+        artifact = candidate.get("artifacts", {}).get("verified_claims")
+        if not isinstance(artifact, (dict, list)):
+            raise ValueError("Latest Fact Check candidate has no recoverable verified_claims artifact")
+
+        plan = plan_revision(
+            base, "FACT_CHECK_CONTRACT_REVALIDATION",
+            requested_changes=["Normalize and revalidate the saved Fact Check candidate under the current contract"],
+        )
+        revision = self.create(base, plan)
+        self.orchestrator.revalidate_fact_check_artifact(revision, artifact)
+        if feedback_source:
+            source = Path(feedback_source) / "human/feedback.json"
+            payload = _read(source, {"schema_version": "2.0", "feedback": []})
+            if payload.get("feedback"):
+                _write(revision / "human/feedback.json", payload)
+        result = self.execute(base, plan.revision_id)
+        return {**result, "revision_id": plan.revision_id}
+
+    def recover_blocked_strategy(self, base_folder) -> dict:
+        """Recover an equivalent but wrapped Strategy artifact without an Agent call."""
+        from .envelope import parse_envelope
+
+        base = Path(base_folder)
+        state = load_run_state(base)
+        if state.get("overall_status") != "BLOCKED_QUALITY" or state.get("current_stage") != "strategy":
+            raise ValueError("Local Strategy recovery requires a run blocked at strategy")
+        candidates = sorted((base / "quality/candidates").glob("strategy_attempt_*_invalid.json"))
+        if not candidates:
+            raise ValueError("No saved Strategy candidate is available for local recovery")
+        saved = _read(candidates[-1], {})
+        attempt = int(saved.get("attempt") or state.get("stages", {}).get("strategy", {}).get("attempt") or 1)
+        envelope = parse_envelope(
+            saved.get("raw_response"), stage="strategy", attempt=attempt,
+            run_id=state["run_id"], revision_id=state.get("revision_id", "rev_000"),
+        )
+        plan = plan_revision(
+            base, "STRATEGY_CONTRACT_REVALIDATION",
+            requested_changes=["Normalize and revalidate the saved Strategy candidate under the current contract"],
+        )
+        revision = self.create(base, plan)
+        self.orchestrator.revalidate_strategy_artifacts(revision, envelope["artifacts"])
+        result = self.execute(base, plan.revision_id)
+        return {**result, "revision_id": plan.revision_id}
 
     def pause(self, base_folder, revision_id):
         return self._set_status(base_folder, revision_id, "PAUSED")
 
     def resume(self, base_folder, revision_id, *, human_feedback=None):
         execution = self._load_execution(base_folder, revision_id)
+        revision = Path(base_folder) / "revisions" / revision_id
+        state = load_run_state(revision)
+        running_stage = execution.get("current_stage")
+        if (
+            execution.get("plan_status") == "RUNNING"
+            and running_stage in AGENT_STAGES
+            and state.get("stages", {}).get(running_stage, {}).get("status") == "RUNNING"
+        ):
+            raise RuntimeError(
+                f"{running_stage} Agent is already running for {revision_id}; "
+                "wait for it to finish before retrying"
+            )
         if execution.get("plan_status") not in {"PAUSED", "FAILED", "AWAITING_HUMAN_REVIEW", "CREATED", "RUNNING"}:
             return execution
         return self.execute(base_folder, revision_id, human_feedback=human_feedback)
@@ -237,6 +398,15 @@ class RevisionExecutor:
             save_run_state(revision, state)
         _write(revision / "execution_state.json", execution)
         return self.execute(base_folder, revision_id, human_feedback=human_feedback)
+
+    def repair_report_and_resume_locally(self, base_folder, revision_id):
+        """Resume a report-only contract false negative without Agent calls."""
+        revision = Path(base_folder) / "revisions" / revision_id
+        execution = self._load_execution(base_folder, revision_id)
+        if execution.get("plan_status") != "FAILED" or execution.get("failed_stage") != "report":
+            raise ValueError("Local report repair requires a revision failed at report")
+        self.orchestrator.normalize_saved_report_model(revision)
+        return self.retry_failed_stage(base_folder, revision_id)
 
     def cancel(self, base_folder, revision_id):
         execution = self._set_status(base_folder, revision_id, "CANCELLED")

@@ -71,8 +71,39 @@ def _report_bundle(
     scope: dict,
 ):
     dashboard = _read_json(source_folder / "06_dashboard_data.json")
-    if not isinstance(dashboard, dict) or not dashboard.get("report_data"):
+    if not isinstance(dashboard, dict):
         return None
+    if not dashboard.get("report_data"):
+        # Pipeline V2 originally emitted canonical dashboard fields without
+        # the legacy-compatible report_data view required by the web client.
+        # Adapt structured JSON only; never extract values from Markdown.
+        from pipeline_v2.report_protocol import dashboard_report_data, normalize_strategic_items
+
+        report_data = _read_json(source_folder / "04_report_data.json", {})
+        claims = _read_json(source_folder / "fact_check/verified_claims.json", {}).get("claims", [])
+        report_model = _read_json(source_folder / "strategy/report_model.json", {})
+        if not isinstance(report_data, dict) or not report_data:
+            return None
+        report_data = dict(report_data)
+        if not report_data.get("risks"):
+            report_data["risks"] = normalize_strategic_items(report_model, claims, "risks")
+        if not report_data.get("opportunities"):
+            report_data["opportunities"] = normalize_strategic_items(report_model, claims, "opportunities")
+        compatible = dashboard_report_data(scope, report_data, claims)
+        dashboard = {
+            **dashboard,
+            "quality_status": dashboard.get("quality_status") or "UNKNOWN",
+            "scope": compatible["scope"],
+            "report_version": revision,
+            "template_id": compatible["scope"]["analysis_type"],
+            "industry_template_id": compatible["scope"].get("selected_template") or "general",
+            "components": dashboard.get("components", []),
+            "excluded_metrics": dashboard.get("excluded_metrics", []),
+            "validation_errors": dashboard.get("validation_errors", []),
+            "risks": compatible["risks"],
+            "opportunities": compatible["opportunities"],
+            "report_data": compatible,
+        }
 
     revision_manifest = (
         None

@@ -12,18 +12,28 @@ REQUIREMENTS = tuple(
 ) + tuple(
     requirement(
         x, "IMPORTANT", f"公司诊断数据：{x}", proxy=x in {"capabilities", "risks"},
-        components=("OperatingMetricSummary", "OperatingMetricsTimeSeries") if x == "operating_metrics" else (),
-        required_metrics=(
-            "passenger_count", "flight_count", "available_seat_km", "revenue_passenger_km",
-            "passenger_load_factor", "yield", "rask", "cask_ex_fuel",
-        ) if x == "operating_metrics" else (),
-        component_minimums={
-            "OperatingMetricSummary": {"numeric_observations": 1},
-            "OperatingMetricsTimeSeries": {"periods_per_metric": 2},
-        } if x == "operating_metrics" else {},
+        # Company strategy spans many industries. Requiring airline KPIs here
+        # polluted non-aviation runs (for example Schneider Electric) with
+        # passenger/ASK/RPK gaps. Industry-specific metrics are applied by the
+        # registry after the scope's industry route is known.
     )
     for x in ("market_position", "competitors", "operating_metrics", "capabilities", "investments", "risks")
 ) + tuple(
     requirement(x, "OPTIONAL", f"公司补充数据：{x}", proxy=True)
     for x in ("employee_metrics", "ESG_metrics", "detailed_unit_economics")
 )
+
+
+AVIATION_OPERATING_METRICS = (
+    "passenger_count", "flight_count", "available_seat_km", "revenue_passenger_km",
+    "passenger_load_factor", "yield", "rask", "cask_ex_fuel",
+)
+
+AVIATION_OPERATING_COMPONENTS = (
+    "OperatingMetricSummary", "OperatingMetricsTimeSeries",
+)
+
+AVIATION_OPERATING_MINIMUMS = {
+    "OperatingMetricSummary": {"numeric_observations": 1},
+    "OperatingMetricsTimeSeries": {"periods_per_metric": 2},
+}

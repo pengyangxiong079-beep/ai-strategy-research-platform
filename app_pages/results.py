@@ -50,13 +50,19 @@ summary_cols = st.columns(3)
 with summary_cols[0]:
     with st.container(border=True, height="stretch"):
         st.markdown("**关键机会**")
-        for item in vm["opportunities"]:
-            st.write(f"- {item.get('title') or item.get('label') or item}")
+        if vm["opportunities"]:
+            for item in vm["opportunities"]:
+                st.write(f"- {item.get('title') or item.get('label') or item}")
+        else:
+            st.caption("当前证据不足以形成结构化机会判断；未生成虚假条目。")
 with summary_cols[1]:
     with st.container(border=True, height="stretch"):
         st.markdown("**关键风险**")
-        for item in vm["risks"]:
-            st.write(f"- {item.get('title') or item.get('label') or item}")
+        if vm["risks"]:
+            for item in vm["risks"]:
+                st.write(f"- {item.get('title') or item.get('label') or item}")
+        else:
+            st.caption("当前证据不足以形成结构化风险判断；未生成虚假条目。")
 with summary_cols[2]:
     with st.container(border=True, height="stretch"):
         st.markdown("**战略优先级**")

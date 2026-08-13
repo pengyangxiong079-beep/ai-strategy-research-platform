@@ -1,5 +1,6 @@
 from pathlib import Path
 from ui.repository import read_json, read_text
+from pipeline_v2.report_protocol import normalize_strategic_items
 
 
 def _decision_brief(report_data):
@@ -29,6 +30,10 @@ def _decision_brief(report_data):
 def results_view_model(run):
     folder = Path(run["folder"])
     report_data = read_json(folder / "04_report_data.json", {})
+    report_model = read_json(folder / "strategy/report_model.json", {})
+    claims = read_json(folder / "fact_check/verified_claims.json", {}).get("claims", [])
+    opportunities = report_data.get("opportunities") or normalize_strategic_items(report_model, claims, "opportunities")
+    risks = report_data.get("risks") or normalize_strategic_items(report_model, claims, "risks")
     final_path = folder / "rendered/04_final_report.md" if (folder / "rendered/04_final_report.md").is_file() else folder / "04_final_report.md"
     level2 = [
         ("Research Brief", "rendered/01_research_brief.md", "01_research_brief.md"),
@@ -48,7 +53,7 @@ def results_view_model(run):
     return {
         "available": final_path.is_file(), "final_path": str(final_path), "final_markdown": read_text(final_path),
         "report_data": report_data, "executive_summary": report_data.get("executive_summary", ""),
-        "opportunities": report_data.get("opportunities", [])[:3], "risks": report_data.get("risks", [])[:3],
+        "opportunities": opportunities[:3], "risks": risks[:3],
         "recommendations": report_data.get("recommendations", [])[:4], "data_gaps": report_data.get("data_gaps", [])[:3],
         "supporting": supporting, "dashboard_path": str(dashboard) if dashboard.is_file() else None,
         "status": run.get("overall_status"), "revision": run.get("revision_id"), "read_only": bool(run.get("read_only")),

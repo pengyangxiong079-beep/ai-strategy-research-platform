@@ -10,6 +10,8 @@ import argparse
 from datetime import datetime
 import hashlib
 import json
+import os
+import subprocess
 from pathlib import Path
 import re
 import sys
@@ -149,7 +151,9 @@ def audit_run(run_row, revision_id, source_folder: Path, incomplete_latest=None)
     review_path = next((path for path in (source_folder / "02_review_notes.json", root / "02_review_notes.json", source_folder / "review/review_notes.json") if path.is_file()), None)
     fact = _json(source_folder / "03_fact_check.json", _json(root / "03_fact_check.json", {}))
     report = _json(source_folder / "04_report_data.json", {})
-    quality = _json(source_folder / "05_quality_check.json", {})
+    quality = _json(source_folder / "quality/summary.json", {})
+    if not quality:
+        quality = _json(source_folder / "05_quality_check.json", {})
     dashboard = _json(source_folder / "06_dashboard_data.json", {})
     observations = _json(source_folder / "data/observations.json", _json(root / "data/observations.json", {"observations": []})).get("observations", [])
     sources = _json(source_folder / "data/sources.json", _json(root / "data/sources.json", _json(root / "data/source_registry.json", {"sources": []}))).get("sources", [])
@@ -157,7 +161,7 @@ def audit_run(run_row, revision_id, source_folder: Path, incomplete_latest=None)
     search_log = _json(source_folder / "data/search_log.json", _json(root / "data/search_log.json", {"entries": []}))
     gap_plan = _json(source_folder / "data/gap_search_plan.json", _json(root / "data/gap_search_plan.json", {"queries": []}))
     issues = []
-    run_state = _json(root / "run_state.json", {})
+    run_state = _json(source_folder / "run_state.json", _json(root / "run_state.json", {}))
 
     for field in ("analysis_type", "industry", "geography", "analysis_date", "time_horizon", "selected_template", "required_sections"):
         if not scope.get(field):
@@ -231,8 +235,8 @@ def audit_run(run_row, revision_id, source_folder: Path, incomplete_latest=None)
         issues.append(_issue("DASHBOARD_SCENARIOS_MISSING", "Final contains three scenarios but Dashboard has fewer than three structured scenarios", "06_dashboard_data.json", pointer="/scenarios"))
     for artifact, rows in (("04_report_data.json", report.get("scenarios", [])), ("06_dashboard_data.json", dashboard.get("scenarios", []))):
         for index, row in enumerate(rows):
-            if row.get("value_type") != "MODELLED":
-                issues.append(_issue("SCENARIO_VALUE_TYPE", "Scenario value_type must be MODELLED", artifact, pointer=f"/scenarios/{index}/value_type"))
+            if row.get("value_type") not in {"MODELLED", "QUALITATIVE"}:
+                issues.append(_issue("SCENARIO_VALUE_TYPE", "Scenario value_type must be MODELLED or QUALITATIVE", artifact, pointer=f"/scenarios/{index}/value_type"))
 
     expected_hash = (report.get("meta") or report.get("_meta") or {}).get("final_report_sha256")
     actual_hash = hashlib.sha256(final_path.read_bytes()).hexdigest() if final_path.is_file() else ""
@@ -249,7 +253,10 @@ def audit_run(run_row, revision_id, source_folder: Path, incomplete_latest=None)
         if re.search(r"annual report\s+\d{4}\s+[\"']?[a-z0-9_]+", text, re.I) and str(scope.get("topic") or "") in text:
             issues.append(_issue("GAP_QUERY_MECHANICAL", "Gap query contains the full topic plus annual report and dataset identifier", "data/gap_search_plan.json", priority="P1", pointer=f"/queries/{index}"))
 
-    quality_status = str(quality.get("overall_status") or manifest.get("quality_check_status") or "UNKNOWN").upper()
+    quality_status = str(
+        quality.get("status") or quality.get("overall_status")
+        or manifest.get("quality_check_status") or "UNKNOWN"
+    ).upper()
     dashboard_status = str(dashboard.get("dashboard_status") or "UNKNOWN").upper()
     if quality_status == "FAIL" and dashboard_status not in {"BLOCKED_BY_QUALITY", "UNAVAILABLE"}:
         issues.append(_issue("DASHBOARD_QUALITY_STATUS", "Quality FAIL must not produce a READY dashboard", "06_dashboard_data.json", pointer="/dashboard_status"))
@@ -297,19 +304,27 @@ def audit_run(run_row, revision_id, source_folder: Path, incomplete_latest=None)
         issues = [
             row for row in issues
             if row.get("artifact") == "repository"
-            or (row.get("artifact") not in missing and (root / str(row.get("artifact"))).exists())
+            or (row.get("artifact") not in missing and (source_folder / str(row.get("artifact"))).exists())
         ]
-        canonical_issues = _json(root / "quality/issues.json", {"issues": []}).get("issues", [])
+        canonical_issues = _json(
+            source_folder / "quality/issues.json",
+            _json(root / "quality/issues.json", {"issues": []}),
+        ).get("issues", [])
         issues.extend(canonical_issues)
         current_stage = run_state.get("current_stage") or manifest.get("current_stage") or "unknown"
         overall = run_state.get("overall_status") or manifest.get("final_status") or "INCOMPLETE"
         blocked_on_data = current_stage == "data" and overall == "BLOCKED_DATA"
+        awaiting_human = current_stage == "human" and overall == "AWAITING_HUMAN_REVIEW"
         issues.append(_issue(
             "RUN_INCOMPLETE_AT_GATE",
             f"Run stopped at {current_stage} with status {overall}",
             "run_state.json" if run_state else "run_manifest.json",
             pointer=f"/stages/{current_stage}" if run_state else "/current_stage",
-            repair_type="REQUIRES_LIVE_RERUN" if blocked_on_data else "STAGE_RETRY",
+            repair_type=(
+                "REQUIRES_LIVE_RERUN" if blocked_on_data
+                else "HUMAN_REQUIRED" if awaiting_human
+                else "STAGE_RETRY"
+            ),
         ))
 
     roots = aggregate_root_causes(issues)
@@ -351,17 +366,47 @@ def scan_repository(repo: Path):
     ]
     excluded = {".git", ".venv", "node_modules", "outputs", "dist", ".pytest_cache", "audit", "__pycache__"}
     findings = []
-    for path in repo.rglob("*"):
-        if not path.is_file() or any(part in excluded for part in path.parts) or path.stat().st_size > 2_000_000:
+    files = []
+    # A release scan should cover exactly what Git can publish: tracked files
+    # plus unignored untracked files.  This avoids recursively walking local
+    # caches and generated workspaces that are outside the release surface.
+    if (repo / ".git").exists():
+        try:
+            completed = subprocess.run(
+                ["git", "-C", str(repo), "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+                check=True, capture_output=True, timeout=30,
+            )
+            files = [repo / value.decode("utf-8", errors="surrogateescape") for value in completed.stdout.split(b"\0") if value]
+        except (OSError, subprocess.SubprocessError):
+            files = []
+    if not files:
+        for current, directory_names, file_names in os.walk(repo):
+            directory_names[:] = [name for name in directory_names if name not in excluded]
+            files.extend(Path(current) / name for name in file_names)
+    for path in files:
+        try:
+            size = path.stat().st_size
+        except OSError:
+            continue
+        if size > 2_000_000:
             continue
         try:
-            text = path.read_text(encoding="utf-8")
+            # Avoid Windows universal-newline translation, which is extremely
+            # slow for minified bundles containing very long lines.
+            text = path.read_bytes().decode("utf-8")
         except (OSError, UnicodeDecodeError):
             continue
         for name, pattern in patterns:
             for match in pattern.finditer(text):
                 findings.append({"rule_id": name, "file": str(path.relative_to(repo)), "line": text.count("\n", 0, match.start()) + 1})
-    large_files = [{"file": str(path.relative_to(repo)), "bytes": path.stat().st_size} for path in repo.rglob("*") if path.is_file() and not any(part in excluded for part in path.parts) and path.stat().st_size > 10_000_000]
+    large_files = []
+    for path in files:
+        try:
+            size = path.stat().st_size
+        except OSError:
+            continue
+        if size > 10_000_000:
+            large_files.append({"file": str(path.relative_to(repo)), "bytes": size})
     return {"status": "PASS" if not findings else "FAIL", "findings": findings, "large_files": large_files}
 
 
@@ -393,6 +438,12 @@ def main(argv=None):
         rows = discover_runs(Path(args.outputs_root))
         run_row, incomplete = select_run(rows, args.run)
         revision_id, source_folder = select_revision(run_row["folder"], run_row["manifest"], args.revision)
+        selected_state = _json(source_folder / "run_state.json", {})
+        if (
+            revision_id not in {"current", "rev_000"}
+            and selected_state.get("overall_status") in {"COMPLETED", "COMPLETED_WITH_WARNINGS"}
+        ):
+            incomplete = None
         payload = audit_run(run_row, revision_id, source_folder, incomplete)
         report_dir = Path("audit")
         report_dir.mkdir(parents=True, exist_ok=True)

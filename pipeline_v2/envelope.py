@@ -21,6 +21,56 @@ EXPECTED_ARTIFACTS = {
     "strategy": ("recommendations", "report_model"),
 }
 
+ARTIFACT_TYPES = {
+    "data": {
+        "requirements": dict,
+        "source_registry": dict,
+        "observations": dict,
+        "sufficiency": dict,
+    },
+    "research": {"claims": list, "research_sections": list},
+    "review": {"review_notes": list},
+    "fact_check": {"verified_claims": (dict, list)},
+    "strategy": {"recommendations": list, "report_model": dict},
+}
+
+DATA_COLLECTIONS = {
+    "requirements": "datasets",
+    "source_registry": "sources",
+    "observations": "observations",
+    "sufficiency": "datasets",
+}
+
+
+def _normalize_single_collection_wrappers(payload: dict, stage: str) -> list[str]:
+    """Unwrap an unambiguous ``{"name": [...]}`` around list artifacts.
+
+    Agents occasionally mirror the persisted-file shape even though the
+    Envelope contract asks for a bare array.  The two representations contain
+    exactly the same information, so spending another live call on this shape
+    difference is both wasteful and brittle.  Only exact, same-name,
+    single-key wrappers are accepted; additional keys or non-list values still
+    fail the strict artifact contract.
+    """
+    artifacts = payload.get("artifacts")
+    if not isinstance(artifacts, dict):
+        return []
+    normalized = []
+    for name, expected_type in ARTIFACT_TYPES.get(stage, {}).items():
+        accepts_list = expected_type is list or (
+            isinstance(expected_type, tuple) and list in expected_type
+        )
+        value = artifacts.get(name)
+        if (
+            accepts_list
+            and isinstance(value, dict)
+            and set(value) == {name}
+            and isinstance(value.get(name), list)
+        ):
+            artifacts[name] = value[name]
+            normalized.append(name)
+    return normalized
+
 
 @dataclass
 class AgentOutputError(ValueError):
@@ -106,9 +156,27 @@ def parse_envelope(raw: Any, *, stage: str, attempt: int, run_id: str,
             errors.append("/warnings 必须是数组")
         if not isinstance(payload.get("unresolved_items", []), list):
             errors.append("/unresolved_items 必须是数组")
+        # Envelope provenance is orchestration metadata, not research evidence.
+        # Older/compact Agent responses may omit it even when every canonical
+        # artifact is valid. Fill only these deterministic fields locally so a
+        # second live Agent call is never spent on timestamps or role labels.
         metadata = payload.get("metadata")
-        if not isinstance(metadata, dict) or not metadata.get("generated_at") or not metadata.get("agent_role"):
-            errors.append("/metadata 必须包含 generated_at 和 agent_role")
+        if metadata is None:
+            metadata = {}
+            payload["metadata"] = metadata
+        if not isinstance(metadata, dict):
+            errors.append("/metadata 必须是对象")
+        else:
+            normalized_fields = []
+            if not metadata.get("generated_at"):
+                metadata["generated_at"] = now_iso()
+                normalized_fields.append("generated_at")
+            if not metadata.get("agent_role"):
+                metadata["agent_role"] = f"Pipeline V2 {stage} Agent"
+                normalized_fields.append("agent_role")
+            if normalized_fields:
+                metadata["normalized_by"] = "PipelineV2Orchestrator"
+                metadata["normalized_fields"] = normalized_fields
     if errors:
         raise AgentOutputError("AGENT_OUTPUT_SCHEMA_INVALID", stage, attempt, excerpt, errors, list(EXPECTED_ARTIFACTS.get(stage, ())))
 
@@ -117,5 +185,40 @@ def parse_envelope(raw: Any, *, stage: str, attempt: int, run_id: str,
         raise AgentOutputError(
             "AGENT_OUTPUT_CONTRACT_FAILED", stage, attempt, excerpt,
             [f"缺少 artifacts.{name}" for name in missing], list(EXPECTED_ARTIFACTS.get(stage, ())),
+        )
+    normalized_artifacts = _normalize_single_collection_wrappers(payload, stage)
+    if normalized_artifacts:
+        metadata = payload.setdefault("metadata", {})
+        metadata["normalized_by"] = "PipelineV2Orchestrator"
+        existing = list(metadata.get("normalized_artifacts") or [])
+        metadata["normalized_artifacts"] = list(dict.fromkeys(existing + normalized_artifacts))
+    artifact_errors = []
+    for name, expected_type in ARTIFACT_TYPES.get(stage, {}).items():
+        value = payload["artifacts"].get(name)
+        if not isinstance(value, expected_type):
+            expected_name = " or ".join(row.__name__ for row in expected_type) if isinstance(expected_type, tuple) else expected_type.__name__
+            artifact_errors.append(
+                f"/artifacts/{name} must be {expected_name}; got {type(value).__name__}"
+            )
+    if stage == "data":
+        for name, collection in DATA_COLLECTIONS.items():
+            value = payload["artifacts"].get(name)
+            if isinstance(value, dict):
+                rows = value.get(collection)
+                if not isinstance(rows, list):
+                    artifact_errors.append(f"/artifacts/{name}/{collection} must be an array")
+                elif any(not isinstance(row, dict) for row in rows):
+                    artifact_errors.append(f"/artifacts/{name}/{collection} items must be objects")
+    for name, expected_type in ARTIFACT_TYPES.get(stage, {}).items():
+        value = payload["artifacts"].get(name)
+        accepts_list = expected_type is list or (isinstance(expected_type, tuple) and list in expected_type)
+        if accepts_list and isinstance(value, list) and any(
+            not isinstance(row, dict) for row in value
+        ):
+            artifact_errors.append(f"/artifacts/{name} items must be objects")
+    if artifact_errors:
+        raise AgentOutputError(
+            "AGENT_ARTIFACT_SCHEMA_INVALID", stage, attempt, excerpt,
+            artifact_errors, list(EXPECTED_ARTIFACTS.get(stage, ())),
         )
     return payload

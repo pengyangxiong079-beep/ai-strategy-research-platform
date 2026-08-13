@@ -11,10 +11,13 @@ from .contracts import validate_stage
 from .envelope import AgentOutputError, parse_envelope
 from .model import STAGE_ORDER, load_run_state, now_iso, save_run_state
 from .renderer import render_fact_check, render_report, render_research, render_review
-from .report_protocol import attach_fact_verification, hash_file_consistent, report_data_payload, render_content_blocks, sha256_file, validate_report_data
+from .report_protocol import attach_fact_verification, dashboard_report_data, hash_file_consistent, report_data_payload, render_content_blocks, sha256_file, validate_report_data
 from .quality import aggregate_quality
 from .review import normalize_review_notes
 from .service import PipelineV2Service
+from .agent_provider import describe_agent_error
+from .fact_check import normalize_fact_check
+from .report_model import normalize_report_model
 
 
 AGENT_STAGES = ("data", "research", "review", "fact_check", "strategy")
@@ -57,6 +60,22 @@ class PipelineV2Orchestrator:
         if not config.get("strict_structured_output") or config.get("allow_legacy_agent_output"):
             raise ValueError("V2严格结构化输出配置未启用")
         wanted = list(stages or STAGE_ORDER)
+        strategy_runs_before_fact_check = (
+            "strategy" in wanted
+            and ("fact_check" not in wanted or wanted.index("strategy") < wanted.index("fact_check"))
+        )
+        if strategy_runs_before_fact_check and state.get("stages", {}).get("fact_check", {}).get("status") not in {
+            "COMPLETE", "COMPLETE_WITH_WARNINGS",
+        }:
+            raise RuntimeError("Fact Check must pass before Strategy can start")
+        strategy_runs_before_human = (
+            "strategy" in wanted
+            and ("human" not in wanted or wanted.index("strategy") < wanted.index("human"))
+        )
+        if strategy_runs_before_human and state.get("stages", {}).get("human", {}).get("status") not in {
+            "COMPLETE", "COMPLETE_WITH_WARNINGS",
+        }:
+            raise RuntimeError("Human Review must be completed before Strategy can start")
         for stage in wanted:
             if stage == "scope":
                 if not self._run_scope(folder, state):
@@ -81,6 +100,92 @@ class PipelineV2Orchestrator:
                     break
         self._finish_if_possible(folder, state, wanted)
         return load_run_state(folder)
+
+    def revalidate_fact_check_artifact(self, folder, artifact) -> dict:
+        """Promote a saved Fact Check candidate using current local contracts.
+
+        This performs no Agent call.  It is intentionally used only inside a
+        new revision so the blocked run and its audit evidence stay immutable.
+        """
+        folder = Path(folder)
+        state = load_run_state(folder)
+        if not state or state.get("pipeline_version") != "2.0":
+            raise ValueError("Fact Check local revalidation requires a Pipeline V2 run")
+        artifacts = {"verified_claims": artifact}
+        payload, context = self._gate_payload(folder, "fact_check", artifacts)
+        gate = validate_stage("fact_check", payload, context)
+        if not gate.can_continue:
+            codes = ", ".join(row.get("rule_id", "UNKNOWN") for row in gate.errors)
+            raise ValueError(f"Saved Fact Check candidate still fails current contracts: {codes}")
+        self._persist_artifacts(folder, "fact_check", artifacts)
+        issues_path = folder / "quality/issues.json"
+        issues = _read(issues_path, {"issues": []}).get("issues", [])
+        _write(issues_path, {
+            "schema_version": "2.0",
+            "issues": [row for row in issues if row.get("stage") != "fact_check"],
+        })
+        state.setdefault("events", []).append({
+            "at": now_iso(), "stage": "fact_check",
+            "event": "FACT_CHECK_CONTRACT_REVALIDATED_LOCALLY",
+            "detail": "Saved candidate normalized and validated without an Agent call",
+        })
+        self._commit_gate(folder, state, "fact_check", payload, context, gate=gate)
+        return load_run_state(folder)
+
+    def revalidate_strategy_artifacts(self, folder, artifacts) -> dict:
+        """Promote an already-generated Strategy candidate after local shape normalization."""
+        folder = Path(folder)
+        state = load_run_state(folder)
+        if not state or state.get("pipeline_version") != "2.0":
+            raise ValueError("Strategy local revalidation requires a Pipeline V2 run")
+        if not isinstance(artifacts, dict):
+            raise ValueError("Saved Strategy candidate has no artifact object")
+        candidate = {
+            "recommendations": artifacts.get("recommendations"),
+            "report_model": artifacts.get("report_model"),
+        }
+        if not isinstance(candidate["recommendations"], list) or not isinstance(candidate["report_model"], dict):
+            raise ValueError("Saved Strategy candidate is not recoverable under the current contract")
+        payload, context = self._gate_payload(folder, "strategy", candidate)
+        gate = validate_stage("strategy", payload, context)
+        if not gate.can_continue:
+            codes = ", ".join(row.get("rule_id", "UNKNOWN") for row in gate.errors)
+            raise ValueError(f"Saved Strategy candidate still fails current contracts: {codes}")
+        self._persist_artifacts(folder, "strategy", candidate)
+        issues = _read(folder / "quality/issues.json", {"issues": []}).get("issues", [])
+        _write(folder / "quality/issues.json", {
+            "schema_version": "2.0",
+            "issues": [row for row in issues if row.get("stage") != "strategy"],
+        })
+        state.setdefault("events", []).append({
+            "at": now_iso(), "stage": "strategy",
+            "event": "STRATEGY_CONTRACT_REVALIDATED_LOCALLY",
+            "detail": "Saved candidate shape normalized and validated without an Agent call",
+        })
+        self._commit_gate(folder, state, "strategy", payload, context, gate=gate)
+        return load_run_state(folder)
+
+    def normalize_saved_report_model(self, folder) -> dict:
+        """Normalize and persist an already-generated report model locally."""
+        folder = Path(folder)
+        path = folder / "strategy/report_model.json"
+        original = _read(path, {})
+        normalized = normalize_report_model(original)
+        if normalized != original:
+            _write(path, normalized)
+            state = load_run_state(folder)
+            state.setdefault("events", []).append({
+                "at": now_iso(), "stage": "report",
+                "event": "REPORT_MODEL_NORMALIZED_LOCALLY",
+                "detail": "Workflow provenance relabeled without changing research facts",
+            })
+            issues = _read(folder / "quality/issues.json", {"issues": []}).get("issues", [])
+            _write(folder / "quality/issues.json", {
+                "schema_version": "2.0",
+                "issues": [row for row in issues if row.get("stage") != "report"],
+            })
+            self._save(folder, state)
+        return normalized
 
     def _begin(self, folder: Path, state: dict, stage: str, attempt: int | None = None):
         current = state["stages"][stage]
@@ -119,6 +224,21 @@ class PipelineV2Orchestrator:
             row.get("repair_type") for row in errors
         } == {"UPSTREAM_DATA_REQUIRED"}:
             request["repair_context"] = self._bounded_gap_context(folder, previous_output, errors)
+        if stage == "data":
+            targeted = _read(folder / "data/targeted_gap_search.json", {})
+            if targeted.get("status") in {"REQUESTED", "RUNNING"}:
+                request["repair_context"] = targeted.get("repair_context") or {}
+                for relative in (
+                    "data/requirements.json", "data/source_registry.json",
+                    "data/observations.json", "data/sufficiency.json",
+                ):
+                    request["inputs"][relative] = _read(folder / relative, {})
+                if targeted.get("status") == "REQUESTED":
+                    targeted.update({
+                        "status": "RUNNING", "started_at": now_iso(),
+                        "attempt_count": int(targeted.get("attempt_count") or 0) + 1,
+                    })
+                    _write(folder / "data/targeted_gap_search.json", targeted)
         return request
 
     def _run_agent_stage(self, folder: Path, state: dict, stage: str) -> bool:
@@ -153,9 +273,13 @@ class PipelineV2Orchestrator:
                 candidate_folder = folder / "quality/candidates"
                 candidate_folder.mkdir(parents=True, exist_ok=True)
                 _write(candidate_folder / f"{stage}_attempt_{attempt}.json", envelope)
+                if stage == "data":
+                    self._merge_targeted_gap_artifacts(folder, envelope["artifacts"])
                 payload, context = self._gate_payload(folder, stage, envelope["artifacts"])
                 gate = validate_stage(stage, payload, context)
                 if gate.can_continue:
+                    if stage == "data":
+                        self._finalize_targeted_gap_search(folder, envelope["artifacts"])
                     self._persist_artifacts(folder, stage, envelope["artifacts"])
                     return self._commit_gate(folder, state, stage, payload, context, gate=gate)
                 last_errors = [self._normalize_issue(x, attempt) for x in gate.errors]
@@ -177,13 +301,14 @@ class PipelineV2Orchestrator:
                     except (TypeError, ValueError):
                         previous = None
             except Exception as error:  # technical failures stay distinct
+                error_detail = describe_agent_error(error)
                 transient = isinstance(error, (ConnectionError, TimeoutError)) or any(
                     token in str(error).lower() for token in TRANSIENT_AGENT_ERRORS
                 )
                 if transient and attempt < self.max_attempts:
                     state.setdefault("events", []).append({
                         "at": now_iso(), "stage": stage, "event": "AGENT_TECHNICAL_RETRY",
-                        "detail": str(error)[:300], "attempt": attempt,
+                        "detail": error_detail[:500], "attempt": attempt,
                     })
                     self._save(folder, state)
                     attempt += 1
@@ -191,7 +316,7 @@ class PipelineV2Orchestrator:
                 state["stages"][stage]["status"] = "FAILED_TECHNICAL"
                 state["overall_status"] = "FAILED_TECHNICAL"
                 state["stages"][stage]["error_codes"] = ["AGENT_TECHNICAL_FAILURE"]
-                state.setdefault("events", []).append({"at": now_iso(), "stage": stage, "event": "FAILED_TECHNICAL", "detail": str(error)[:300], "attempt": attempt})
+                state.setdefault("events", []).append({"at": now_iso(), "stage": stage, "event": "FAILED_TECHNICAL", "detail": error_detail[:500], "attempt": attempt})
                 self._save(folder, state)
                 return False
 
@@ -235,6 +360,88 @@ class PipelineV2Orchestrator:
             self._save(folder, state)
             attempt += 1
         return False
+
+    @staticmethod
+    def _merge_targeted_gap_artifacts(folder: Path, artifacts: dict):
+        """Preserve prior evidence and recompute coverage for a targeted search."""
+        marker = _read(folder / "data/targeted_gap_search.json", {})
+        if marker.get("status") not in {"REQUESTED", "RUNNING"}:
+            return
+        from research_platform.sufficiency import evaluate_sufficiency
+
+        existing_requirements = _read(folder / "data/requirements.json", {"datasets": []})
+        existing_sources = _read(folder / "data/source_registry.json", {"sources": []})
+        existing_observations = _read(folder / "data/observations.json", {"observations": []})
+
+        def merge_rows(previous, incoming, identity):
+            merged = {}
+            order = []
+            for row in [*(previous or []), *(incoming or [])]:
+                if not isinstance(row, dict):
+                    continue
+                key = identity(row)
+                if not key:
+                    continue
+                if key not in merged:
+                    order.append(key)
+                merged[key] = {**merged.get(key, {}), **row}
+            return [merged[key] for key in order]
+
+        incoming_sources = (artifacts.get("source_registry") or {}).get("sources", [])
+        incoming_observations = (artifacts.get("observations") or {}).get("observations", [])
+        sources = merge_rows(
+            existing_sources.get("sources", []), incoming_sources,
+            lambda row: row.get("source_id") or row.get("url"),
+        )
+        observations = merge_rows(
+            existing_observations.get("observations", []), incoming_observations,
+            lambda row: row.get("observation_id"),
+        )
+        requirements = existing_requirements if existing_requirements.get("datasets") else artifacts.get("requirements", {})
+        scope = _read(folder / "00_analysis_scope.json", {})
+        previous_rounds = int(marker.get("previous_rounds") or 0)
+        sufficiency = evaluate_sufficiency(
+            requirements, observations, sources, scope,
+            gap_rounds_completed=previous_rounds + 1,
+            stop_reason="Targeted gap search completed; unresolved items remain explicit.",
+        )
+        artifacts["requirements"] = requirements
+        artifacts["source_registry"] = {"schema_version": "1.0", "sources": sources}
+        artifacts["observations"] = {"schema_version": "1.0", "observations": observations}
+        artifacts["sufficiency"] = sufficiency
+
+    @staticmethod
+    def _finalize_targeted_gap_search(folder: Path, artifacts: dict):
+        path = folder / "data/targeted_gap_search.json"
+        marker = _read(path, {})
+        if marker.get("status") not in {"REQUESTED", "RUNNING"}:
+            return
+        sufficiency = artifacts.get("sufficiency")
+        if not isinstance(sufficiency, dict):
+            return
+        previous_rounds = int(marker.get("previous_rounds") or 0)
+        sufficiency["gap_search_rounds_completed"] = max(
+            int(sufficiency.get("gap_search_rounds_completed") or 0), previous_rounds + 1,
+        )
+        targets = list(marker.get("target_dataset_ids") or [])
+        status_by_dataset = {
+            row.get("dataset_id"): row.get("status")
+            for row in sufficiency.get("datasets", []) if isinstance(row, dict)
+        }
+        resolved = [dataset_id for dataset_id in targets if status_by_dataset.get(dataset_id) == "PASS"]
+        remaining = [dataset_id for dataset_id in targets if dataset_id not in resolved]
+        sufficiency["search_stop_reason"] = (
+            "Targeted gap search closed all selected datasets."
+            if not remaining else
+            "Targeted gap search completed; selected datasets without sufficient verifiable evidence remain explicit."
+        )
+        marker.update({
+            "status": "COMPLETED", "completed_at": now_iso(),
+            "resolved_dataset_ids": resolved,
+            "remaining_dataset_ids": remaining,
+            "attempt_count": int(marker.get("attempt_count") or 0),
+        })
+        _write(path, marker)
 
     @staticmethod
     def _bounded_gap_context(folder: Path, previous_output: dict | None, errors: list[dict]) -> dict:
@@ -363,9 +570,16 @@ class PipelineV2Orchestrator:
         if not hash_file_consistent(folder / "04_final_report.md", report_data):
             self._block(folder, state, "dashboard", [{"rule_id": "REPORT_HASH_MISMATCH", "reason": "04_final_report.md changed after report_data was frozen", "stage": "dashboard", "repair_type": "STAGE_RETRY"}], "BLOCKED_QUALITY")
             return False
+        dashboard_report = dashboard_report_data(scope, report_data, claims)
+        quality = _read(folder / "quality/summary.json", {})
+        quality_status = str(quality.get("status") or "UNKNOWN").upper()
+        if quality_status not in {"PASS", "WARN", "FAIL", "UNKNOWN"}:
+            quality_status = "WARN" if "WARN" in quality_status else "UNKNOWN"
+        recommendations = dashboard_report["recommendations"]
         payload = {
             "schema_version": "2.0", "derived_from_markdown": False,
             "dashboard_status": "READY_WITH_GAPS" if report_data.get("validation_errors") else "READY",
+            "quality_status": quality_status,
             "meta": {"run_id": state["run_id"], "revision_id": state["revision_id"], "analysis_type": scope.get("analysis_type_id", "GENERIC_STRATEGY"), "topic": scope.get("topic", ""), "is_demo": bool(scope.get("is_test_fixture"))},
             "executive_summary": {
                 "conclusion": next((row.get("text") for row in report_data.get("content_blocks", []) if row.get("claim_type") in {"RECOMMENDATION", "INFERENCE"} and row.get("text")), ""),
@@ -373,16 +587,25 @@ class PipelineV2Orchestrator:
             },
             "metrics": report_data.get("metrics", []),
             "time_series": report_data.get("time_series", []), "comparisons": report_data.get("comparisons", []),
-            "matrices": [], "segments": report_data.get("segments", []), "geographies": [], "risks": [], "opportunities": [], "strategic_options": [],
-            "recommendations": _read(folder / "strategy/recommendations.json", {"recommendations": []}).get("recommendations", []),
+            "matrices": [], "segments": report_data.get("segments", []), "geographies": [],
+            "risks": report_data.get("risks", []), "opportunities": report_data.get("opportunities", []), "strategic_options": [],
+            "recommendations": recommendations,
             "initiatives": [],
             "scenarios": report_data.get("scenarios", []), "content_blocks": report_data.get("content_blocks", []),
             "observations": dashboard_observations,
             "data_coverage": _read(folder / "data/data_coverage.json", _read(folder / "data/sufficiency.json", {})),
             "data_gaps": report_data.get("data_gaps", []),
             "evidence": [{"observation_id": row.get("observation_id"), "source_id": row.get("source_id"), "source": source_map.get(row.get("source_id"), {}), "verification_status": row.get("verification_status"), "source_fact_ids": row.get("source_fact_ids", [])} for row in dashboard_observations],
-            "quality": _read(folder / "quality/summary.json", {}),
+            "quality": {"overall_status": quality_status, "quality_issues": quality.get("raw_issues", []), "excluded_fields": []},
             "revision": {"revision_id": state["revision_id"], "revision_count": sum(path.name != "rev_000" for path in (folder / "revisions").glob("rev_*") if path.is_dir()) if (folder / "revisions").is_dir() else 0},
+            # Stable offline-dashboard compatibility envelope. Canonical V2
+            # fields above remain the source; this view avoids Markdown parsing.
+            "scope": dashboard_report["scope"],
+            "report_version": state["revision_id"],
+            "template_id": scope.get("analysis_type_id", "GENERIC_STRATEGY"),
+            "industry_template_id": scope.get("selected_template") or "general",
+            "components": [], "excluded_metrics": [], "validation_errors": [],
+            "report_data": dashboard_report,
         }
         gate = validate_stage("dashboard", payload, {})
         if not gate.can_continue:
@@ -395,6 +618,14 @@ class PipelineV2Orchestrator:
     def _run_quality(self, folder: Path, state: dict):
         self._begin(folder, state, "quality")
         issues = _read(folder / "quality/issues.json", {"issues": []}).get("issues", [])
+        issues = [
+            row for row in issues
+            if not (
+                row.get("stage") in {"fact_check", "strategy", "report", "dashboard"}
+                and state.get("stages", {}).get(row.get("stage"), {}).get("status")
+                in {"COMPLETE", "COMPLETE_WITH_WARNINGS"}
+            )
+        ]
         report_data = _read(folder / "04_report_data.json", {})
         final_path = folder / "04_final_report.md"
         if final_path.is_file() and not hash_file_consistent(final_path, report_data):
@@ -488,7 +719,10 @@ class PipelineV2Orchestrator:
         paths = {
             "data": ["00_analysis_scope.json"],
             "research": ["data/requirements.json", "data/source_registry.json", "data/observations.json", "data/sufficiency.json"],
-            "review": ["research/claims.json", "research/research_model.json"],
+            "review": [
+                "research/claims.json", "research/research_model.json",
+                "data/source_registry.json", "data/observations.json", "data/sufficiency.json",
+            ],
             "fact_check": ["research/claims.json", "02_review_notes.json", "data/sources.json", "data/observations.json"],
             "strategy": ["00_analysis_scope.json", "fact_check/verified_claims.json", "human/feedback.json", "data/observations.json", "02_review_notes.json"],
         }.get(stage, [])
@@ -510,11 +744,18 @@ class PipelineV2Orchestrator:
         if stage == "fact_check":
             src = _read(folder / "data/sources.json", _read(folder / "data/source_registry.json", {"sources": []})).get("sources", [])
             obs = _read(folder / "data/observations.json", {"observations": []}).get("observations", [])
-            return {"claims": artifacts["verified_claims"]}, {"sources": src, "observations": obs}
+            research_claims = _read(folder / "research/claims.json", {"claims": []}).get("claims", [])
+            normalized = normalize_fact_check(artifacts["verified_claims"], research_claims, obs, src)
+            artifacts["verified_claims"] = normalized
+            return normalized, {"sources": src, "observations": obs, "research_claims": research_claims}
         if stage == "strategy":
+            artifacts["report_model"] = normalize_report_model(artifacts["report_model"])
             claims = _read(folder / "fact_check/verified_claims.json", {"claims": []}).get("claims", [])
             review_ids = [row.get("review_id") for row in _read(folder / "02_review_notes.json", {"issues": []}).get("issues", [])]
-            return {"recommendations": artifacts["recommendations"]}, {"claims": claims, "review_ids": review_ids}
+            return {
+                "recommendations": artifacts["recommendations"],
+                "report_model": artifacts["report_model"],
+            }, {"claims": claims, "review_ids": review_ids}
         return artifacts, {}
 
     @staticmethod
@@ -532,11 +773,17 @@ class PipelineV2Orchestrator:
         for name, relative in paths.items():
             value = artifacts[name]
             if name == "verified_claims":
-                for index, claim in enumerate(value, 1):
+                claims = value.get("claims", [])
+                for index, claim in enumerate(claims, 1):
                     claim["display_id"] = claim.get("display_id") or f"F{index}"
+                value = {
+                    "schema_version": "2.0", "claims": claims,
+                    "observation_verifications": value.get("observation_verifications", []),
+                }
             if name in {"claims", "verified_claims", "recommendations", "review_notes"}:
-                key = {"review_notes": "issues", "verified_claims": "claims"}.get(name, name)
-                value = {"schema_version": "2.0", key: value}
+                if name != "verified_claims":
+                    key = {"review_notes": "issues"}.get(name, name)
+                    value = {"schema_version": "2.0", key: value}
             elif name == "research_sections":
                 value = {"schema_version": "2.0", "sections": value}
             _write(folder / relative, value)
@@ -549,14 +796,5 @@ class PipelineV2Orchestrator:
                 _write(folder / "data/data_coverage.json", value)
             elif name == "verified_claims":
                 claims = value.get("claims", [])
-                observation_verifications = []
-                for claim in claims:
-                    for observation_id in claim.get("observation_ids", []):
-                        observation_verifications.append({
-                            "observation_id": observation_id,
-                            "claim_id": claim.get("claim_id"),
-                            "verification_status": claim.get("verification_status", "NOT_CHECKED"),
-                            "temporal_status": claim.get("temporal_status", "UNKNOWN"),
-                            "source_ids": list(claim.get("source_ids") or []),
-                        })
+                observation_verifications = value.get("observation_verifications", [])
                 _write(folder / "03_fact_check.json", {"schema_version": "2.0", "claims": claims, "observation_verifications": observation_verifications})

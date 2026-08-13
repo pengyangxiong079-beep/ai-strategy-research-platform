@@ -16,6 +16,7 @@ CLAIM_TAGS = {
     "INFERENCE": "推断",
     "RECOMMENDATION": "建议",
     "PENDING": "待验证",
+    "PROCESS": "流程记录",
 }
 FACT_TAG_RE = re.compile(r"【\s*事实(?:\s*[｜|]\s*(F\d+))?\s*】")
 
@@ -55,6 +56,121 @@ def build_content_blocks(report_model: dict, claims: list[dict], recommendations
     return blocks
 
 
+def normalize_strategic_items(report_model: dict, claims: list[dict], collection: str) -> list[dict]:
+    """Normalize evidence-linked risks/opportunities without mining Markdown.
+
+    New Strategy responses provide explicit structured collections.  The
+    paragraph fallback keeps older V2 artifacts useful and is deliberately
+    limited to an already-structured risk/opportunity section.
+    """
+    claim_map = {row.get("claim_id"): row for row in claims if row.get("claim_id")}
+    prefixes = {
+        "risks": ("risk", "风险", "風險"),
+        "opportunities": ("opportun", "机会", "機會"),
+    }
+    raw_items = report_model.get(collection)
+    if not isinstance(raw_items, list):
+        raw_items = []
+    if not raw_items:
+        for paragraph in report_model.get("paragraphs", []):
+            section = " ".join(str(paragraph.get(key) or "") for key in ("section_id", "section_title")).lower()
+            if any(token in section for token in prefixes[collection]) and paragraph.get("text"):
+                raw_items.append({
+                    "label": paragraph.get("section_title") or paragraph.get("section_id"),
+                    "description": paragraph.get("text"),
+                    "claim_ids": paragraph.get("claim_ids", []),
+                    "confidence": "MEDIUM",
+                })
+
+    normalized = []
+    for index, raw in enumerate(raw_items, 1):
+        if not isinstance(raw, dict):
+            continue
+        claim_ids = list(dict.fromkeys(str(value) for value in raw.get("claim_ids", []) if value))
+        fact_ids = list(dict.fromkeys(str(value) for value in raw.get("source_fact_ids", []) if value))
+        for claim_id in claim_ids:
+            claim = claim_map.get(claim_id, {})
+            fact_id = claim.get("display_id") or claim.get("claim_id")
+            if fact_id and fact_id not in fact_ids:
+                fact_ids.append(fact_id)
+        label = str(raw.get("label") or raw.get("title") or raw.get("name") or "").strip()
+        description = str(raw.get("description") or raw.get("rationale") or raw.get("text") or "").strip()
+        if not label or not description:
+            continue
+        item_id = str(
+            raw.get("item_id") or raw.get("risk_id") or raw.get("opportunity_id")
+            or f"{'RISK' if collection == 'risks' else 'OPP'}_{index:03d}"
+        )
+        normalized.append({
+            "item_id": item_id,
+            "label": label,
+            "description": description,
+            "severity": raw.get("severity"),
+            "timeframe": raw.get("timeframe") or raw.get("time_horizon"),
+            "owner": raw.get("owner") or raw.get("responsible_function"),
+            "priority": raw.get("priority"),
+            "confidence": raw.get("confidence"),
+            "claim_ids": claim_ids,
+            "source_fact_ids": fact_ids,
+        })
+    return normalized
+
+
+def dashboard_report_data(scope: dict, report_data: dict, claims: list[dict]) -> dict:
+    """Adapt canonical V2 report data to the dashboard's stable report model."""
+    claim_map = {row.get("claim_id"): row for row in claims if row.get("claim_id")}
+
+    def recommendation(raw, index):
+        claim_ids = list(raw.get("claim_ids") or [])
+        fact_ids = list(raw.get("source_fact_ids") or [])
+        for claim_id in claim_ids:
+            claim = claim_map.get(claim_id, {})
+            fact_id = claim.get("display_id") or claim.get("claim_id")
+            if fact_id and fact_id not in fact_ids:
+                fact_ids.append(fact_id)
+        return {
+            **raw,
+            "item_id": raw.get("item_id") or raw.get("recommendation_id") or f"REC_{index:03d}",
+            "label": raw.get("label") or raw.get("title") or f"Recommendation {index}",
+            "description": raw.get("description") or raw.get("rationale") or "",
+            "source_fact_ids": fact_ids,
+        }
+
+    verification = {"verified": 0, "partial": 0, "unsupported": 0, "superseded": 0}
+    for claim in claims:
+        status = str(claim.get("verification_status") or "").upper()
+        key = {"SUPPORTED": "verified", "PARTIAL": "partial", "UNSUPPORTED": "unsupported", "SUPERSEDED": "superseded"}.get(status)
+        if key:
+            verification[key] += 1
+    conclusion = next((
+        row.get("text") for row in report_data.get("content_blocks", [])
+        if row.get("claim_type") in {"RECOMMENDATION", "INFERENCE"} and row.get("text")
+    ), "")
+    return {
+        "schema_version": "1.0",
+        "scope": {
+            "topic": scope.get("topic") or "Strategy report",
+            "analysis_type": scope.get("analysis_type_id") or scope.get("analysis_type") or "GENERIC_STRATEGY",
+            "industry": scope.get("industry"),
+            "geography": scope.get("geography") or "Unspecified",
+            "analysis_date": scope.get("analysis_date") or "Unspecified",
+            "selected_template": scope.get("selected_template"),
+        },
+        "executive_summary": conclusion,
+        "kpis": list(report_data.get("metrics", [])),
+        "time_series": list(report_data.get("time_series", [])),
+        "market_segments": list(report_data.get("segments", [])),
+        "competitor_comparisons": list(report_data.get("comparisons", [])),
+        "risks": list(report_data.get("risks", [])),
+        "opportunities": list(report_data.get("opportunities", [])),
+        "recommendations": [recommendation(row, index) for index, row in enumerate(report_data.get("recommendations", []), 1)],
+        "scenarios": list(report_data.get("scenarios", [])),
+        "roadmap": list(report_data.get("roadmap", [])),
+        "evidence_summary": verification,
+        "data_gaps": list(report_data.get("data_gaps", [])),
+    }
+
+
 def render_content_blocks(title: str, blocks: list[dict]) -> str:
     lines = [f"# {title}", ""]
     section = None
@@ -77,10 +193,38 @@ def normalize_scenarios(scenarios):
     normalized, errors = [], []
     for index, raw in enumerate(scenarios or []):
         row = dict(raw)
-        row["value_type"] = "MODELLED"
-        missing = [field for field in required if field not in row]
-        if missing:
-            errors.append({"rule_id": "SCENARIO_REQUIRED_FIELDS", "location": f"/scenarios/{index}", "reason": f"missing: {', '.join(missing)}"})
+        numeric_fields = {"starting_value", "annual_points", "formula", "target_value", "target_gap"}
+        is_qualitative = not any(field in row for field in numeric_fields) and any(
+            row.get(field) for field in ("conditions", "implications", "actions", "assumptions", "trigger_conditions")
+        )
+        if is_qualitative:
+            semantic_label = str(row.get("label") or "").upper()
+            if row.get("name") and semantic_label in {"FACT", "INFERENCE", "RECOMMENDATION", "PENDING", "PROCESS"}:
+                row["claim_type"] = semantic_label
+                row["label"] = row["name"]
+            row.update({
+                "value_type": "QUALITATIVE",
+                "base_period": str(row.get("base_period") or ""),
+                "end_period": str(row.get("end_period") or ""),
+                "starting_value": None,
+                "annual_points": [],
+                "formula": "",
+                "target_value": None,
+                "target_gap": None,
+                "risks": list(row.get("risks") or []),
+                "source_observation_ids": list(row.get("source_observation_ids") or []),
+                "confidence": row.get("confidence") or "LOW",
+            })
+            conditions = row.get("conditions")
+            row["assumptions"] = list(row.get("assumptions") or ([conditions] if conditions else []))
+            row["trigger_conditions"] = list(row.get("trigger_conditions") or ([conditions] if conditions else []))
+            row["source_fact_ids"] = list(row.get("source_fact_ids") or row.get("claim_ids") or [])
+            row["points"] = []
+        else:
+            row["value_type"] = "MODELLED"
+            missing = [field for field in required if field not in row]
+            if missing:
+                errors.append({"rule_id": "SCENARIO_REQUIRED_FIELDS", "location": f"/scenarios/{index}", "reason": f"missing: {', '.join(missing)}"})
         normalized.append(row)
     return normalized, errors
 
@@ -146,6 +290,8 @@ def report_data_payload(
         "comparisons": views["comparisons"],
         "segments": views["segments"],
         "data_gaps": views["data_gaps"],
+        "risks": normalize_strategic_items(report_model, claims, "risks"),
+        "opportunities": normalize_strategic_items(report_model, claims, "opportunities"),
         "recommendations": list(recommendations),
         "scenarios": scenarios,
         "validation_errors": scenario_errors,

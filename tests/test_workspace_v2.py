@@ -13,11 +13,59 @@ from dashboard.schema import validate_dashboard_data, validate_report_data
 from ui.view_models.decisions_vm import decisions_view_model
 from ui.view_models.project_vm import project_view_model
 from ui.view_models.quality_vm import quality_view_model
+from ui.actions import record_decision
 from ui.view_models.revision_vm import revision_view_model
 from ui.view_models.results_vm import results_view_model
 from ui.view_models.run_vm import overview_view_model
+from ui.state import format_run_option, preferred_revision_for_run, resolve_run_selection
+from ui.workspace import run_view_for_revision
 
 SCOPE = {"analysis_type_id": "COMPANY_STRATEGY", "topic": "Fixture", "industry": "aviation", "geography": "Europe", "analysis_date": "2026-08-09", "required_sections": ["overview"]}
+
+
+def test_pending_run_selection_overrides_persisted_failed_widget():
+    ids = ["new_running", "old_failed"]
+    assert resolve_run_selection(
+        ids, requested="new_running", widget="old_failed", selected="new_running"
+    ) == "new_running"
+    assert resolve_run_selection(
+        ids, widget="old_failed", selected="new_running", migrate=True
+    ) == "new_running"
+
+
+def test_same_topic_run_option_exposes_status_and_timestamp():
+    label = format_run_option({
+        "run_id": "20260812_232726_lufthansa", "topic": "Lufthansa",
+        "overall_status": "FAILED_TECHNICAL",
+    })
+    assert label == "Lufthansa · FAILED_TECHNICAL · 20260812 232726"
+
+
+def test_known_bad_base_prefers_available_repaired_revision():
+    run = create_run_state("r", SCOPE)
+    run["overall_status"] = "BLOCKED_QUALITY"
+    run["stages"]["fact_check"]["status"] = "BLOCKED"
+    assert preferred_revision_for_run(run, ["current", "rev_001"]) == "rev_001"
+    run["stages"]["fact_check"]["status"] = "COMPLETE"
+    assert preferred_revision_for_run(run, ["current", "rev_001"]) == "current"
+
+
+def test_selected_revision_view_replaces_failed_base_status(tmp_path, monkeypatch):
+    base = tmp_path / "base"; revision = base / "revisions" / "rev_001"
+    base.mkdir(parents=True); revision.mkdir(parents=True)
+    base_state = create_run_state("base", SCOPE)
+    base_state["overall_status"] = "FAILED_TECHNICAL"
+    save_run_state(base, base_state)
+    revision_state = create_run_state("base", SCOPE, revision_id="rev_001")
+    revision_state["overall_status"] = "AWAITING_HUMAN_REVIEW"
+    save_run_state(revision, revision_state)
+    monkeypatch.setenv("WORKSPACE_OUTPUTS_ROOT", str(tmp_path))
+    view = run_view_for_revision(
+        {**base_state, "folder": str(base), "project_id": "base"}, "rev_001"
+    )
+    assert view["overall_status"] == "AWAITING_HUMAN_REVIEW"
+    assert view["revision_id"] == "rev_001"
+    assert view["base_folder"] == str(base)
 
 
 def _portable_v2_run(root):
@@ -66,6 +114,39 @@ def test_decisions_pending_then_resolved():
         Path(run["folder"], "human/feedback.json").write_text(json.dumps({"feedback": [{"decision_id": decision_id, "feedback_id": "HFB_x", "status": "RESOLVED"}]}), encoding="utf-8")
         vm = decisions_view_model(run)
         assert not vm["pending"] and len(vm["resolved"]) == 1
+
+
+def test_decision_view_exposes_issue_evidence_and_required_action():
+    with tempfile.TemporaryDirectory() as temp:
+        run = _fixture(Path(temp))
+        folder = Path(run["folder"])
+        (folder / "review/review_issues.json").write_text(json.dumps({"issues": [{
+            "review_id": "R1", "severity": "MEDIUM", "category": "metadata",
+            "issue": "Observation date conflicts with publication date.",
+            "evidence": "OBS_1 predates SRC_1 publication.",
+            "required_action": "Correct the date or change the source.", "status": "OPEN",
+        }]}), encoding="utf-8")
+        decision = decisions_view_model(run)["pending"][0]
+        assert decision["title"] == "Observation date conflicts with publication date."
+        assert decision["evidence"] == "OBS_1 predates SRC_1 publication."
+        assert decision["required_action"] == "Correct the date or change the source."
+        assert decision["severity"] == "MEDIUM"
+
+
+def test_repeated_identical_deferred_decision_is_idempotent():
+    with tempfile.TemporaryDirectory() as temp:
+        run = _fixture(Path(temp))
+        decision = decisions_view_model(run)["pending"][0]
+        first = record_decision(run, decision, "暂缓，返回补充或修正", "请补充运营指标")
+        second = record_decision(run, decision, "暂缓，返回补充或修正", "请补充运营指标")
+        feedback = json.loads(Path(run["folder"], "human/feedback.json").read_text(encoding="utf-8"))["feedback"]
+        assert first["feedback_id"] == second["feedback_id"]
+        assert len(feedback) == 1
+        vm = decisions_view_model(run)
+        assert len(vm["deferred"]) == 1
+        assert not vm["pending"]
+        assert not vm["resolved"]
+        assert not vm["can_continue"]
 
 
 def test_results_artifact_levels_and_one_revision_hides_comparison():

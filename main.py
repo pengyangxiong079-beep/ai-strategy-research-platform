@@ -59,7 +59,7 @@ REVISION_SCHEMA_VERSION = "1.0"
 REVISION_DIRECTORY = "revisions"
 SCOPE_SCHEMA_VERSION = "1.0"
 SCOPE_FILENAME = "00_analysis_scope.json"
-PIPELINE_V2_DEFAULT = os.getenv("PIPELINE_V2", "0").strip().lower() not in {"0", "false", "off"}
+PIPELINE_V2_DEFAULT = os.getenv("PIPELINE_V2", "1").strip().lower() not in {"0", "false", "off"}
 TEMPLATE_DIRECTORY = Path(__file__).resolve().parent / "analysis_templates"
 QUALITY_POLICY_FILE = Path(__file__).resolve().parent / "quality_policy.json"
 ANALYSIS_TYPES = (
@@ -238,8 +238,10 @@ def _build_codex_runtime():
             "AGENT_PROVIDER=codex 且 STRATEGY_PLATFORM_MODE=live 时启用"
         )
     codex_runtime, sandbox_runtime = runtime()
-    codex_cls = globals().setdefault("Codex", codex_runtime)
-    sandbox_cls = globals().setdefault("Sandbox", sandbox_runtime)
+    globals()["Codex"] = codex_runtime
+    globals()["Sandbox"] = sandbox_runtime
+    codex_cls = codex_runtime
+    sandbox_cls = sandbox_runtime
     return codex_cls, sandbox_cls
 
 

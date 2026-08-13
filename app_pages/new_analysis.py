@@ -6,6 +6,7 @@ import main
 from research_platform.data_requirements import build_requirements
 from ui.actions import prepare_and_run, save_draft
 from ui.components import page_header
+from ui.state import request_run_selection
 
 page_header("新建分析", "按五个步骤确认研究任务、范围、问题和数据计划。")
 step = int(st.session_state.current_wizard_step)
@@ -101,15 +102,29 @@ else:
             status = st.status("正在启动Pipeline V2", expanded=True)
             def progress(stage, message):
                 status.write(f"**{stage}** · {message}")
+            def select_prepared_run(prepared):
+                # Select the new canonical run before the first long Agent call.
+                # A browser reconnect then opens this RUNNING run instead of an
+                # older FAILED_TECHNICAL project.
+                request_run_selection(prepared["run_id"])
             try:
-                prepared, _ = prepare_and_run({key: draft.get(key) for key in ("analysis_type", "topic", "industry", "geography", "analysis_date", "time_horizon", "objective", "focus_questions", "competitors", "depth", "currency", "language")}, progress)
-                st.session_state.selected_run_id = prepared["run_id"]
-                st.session_state.selected_project_id = prepared["run_id"]
+                prepared, result = prepare_and_run(
+                    {key: draft.get(key) for key in ("analysis_type", "topic", "industry", "geography", "analysis_date", "time_horizon", "objective", "focus_questions", "competitors", "depth", "currency", "language")},
+                    progress,
+                    select_prepared_run,
+                )
+                request_run_selection(prepared["run_id"])
+                if result.get("overall_status") == "FAILED_TECHNICAL":
+                    latest = (result.get("events") or [{}])[-1]
+                    raise RuntimeError(latest.get("detail") or "Agent技术调用失败；详细信息已写入运行记录。")
                 st.session_state.current_wizard_step = 1
                 st.session_state.analysis_draft = {}
-                status.update(label="已完成研究与核验，等待人工决策", state="complete")
-                st.switch_page("app_pages/decisions.py")
+                if result.get("overall_status") == "AWAITING_HUMAN_REVIEW":
+                    status.update(label="已完成研究与核验，等待人工决策", state="complete")
+                    st.switch_page("app_pages/decisions.py")
+                else:
+                    status.update(label=f"运行已停在 {result.get('current_stage', '未知阶段')}", state="error")
+                    st.warning(f"当前状态：{result.get('overall_status', 'UNKNOWN')}。请在研究流程或数据与质量页面查看门禁原因。")
             except Exception as error:
                 status.update(label="运行发生技术错误，已保留产物", state="error")
-                st.error(str(error))
-
+                st.error(f"{type(error).__name__}: {error}")

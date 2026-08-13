@@ -24,6 +24,13 @@ class AgentProviderConfigurationError(RuntimeError):
     """Raised for an explicit but unsafe or unsupported provider selection."""
 
 
+CODEX_LOGIN_MESSAGE = (
+    "Codex CLI 未登录，真实工作流尚未启动。请在启动 Streamlit 的同一 Windows "
+    "账户中运行 `codex login`（浏览器回调受阻时使用 `codex login --device-auth`），"
+    "完成后用 `codex login status` 确认，再返回工作台重试。"
+)
+
+
 @dataclass(frozen=True)
 class AgentProviderStatus:
     provider: str
@@ -91,3 +98,39 @@ def create_agent_registry(provider: str | None = None) -> "AgentRegistry":
     from pipeline_v2.agents import CodexAgentRegistry
 
     return CodexAgentRegistry()
+
+
+def create_ready_agent_registry(provider: str | None = None) -> "AgentRegistry":
+    """Create a registry and fail fast before any run mutates when auth is absent."""
+    status = get_agent_provider_status(provider)
+    registry = create_agent_registry(provider)
+    if not status.real_agent_calls_allowed:
+        return registry
+    try:
+        Codex, _ = registry.runtime()
+        with Codex() as codex:
+            account = codex.account(refresh_token=False)
+    except Exception as error:
+        raise AgentProviderConfigurationError(
+            "Codex 运行时预检失败，真实工作流尚未启动："
+            + describe_agent_error(error)
+        ) from error
+    if getattr(account, "account", None) is None:
+        raise AgentProviderConfigurationError(CODEX_LOGIN_MESSAGE)
+    return registry
+
+
+def describe_agent_error(error: BaseException) -> str:
+    """Turn transport/auth failures into concise, non-HTML operator guidance."""
+    detail = str(error).strip()
+    lowered = detail.lower()
+    if "403" in lowered or "forbidden" in lowered:
+        return (
+            "CODEX_AUTH_FORBIDDEN：Codex 服务拒绝了当前凭据。请运行 "
+            "`codex login status`；若未登录或凭据已失效，运行 `codex login` 后重试。"
+        )
+    if "401" in lowered or "unauthorized" in lowered or "not logged in" in lowered:
+        return "CODEX_AUTH_REQUIRED：" + CODEX_LOGIN_MESSAGE
+    if any(token in lowered for token in ("timed out", "timeout", "connection", "network")):
+        return "CODEX_NETWORK_UNAVAILABLE：无法连接 Codex 服务，请检查网络、系统代理或防火墙后重试。"
+    return detail[:500] or type(error).__name__

@@ -57,18 +57,20 @@ export function OpportunityMatrix({ opportunities }: { opportunities: StrategicI
 }
 
 export function ScenarioChart({ scenarios }: { scenarios: Scenario[] }) {
-  const usable = scenarios.filter((scenario) => (scenario.points ?? []).filter((point) => !validateMetric(point).length).length > 1);
-  const periods = [...new Set(usable.flatMap((scenario) => scenario.points?.map((point) => point.period ?? "") ?? []))];
-  const option = useMemo(() => usable.length ? {
+  const modelled = scenarios.filter((scenario) => (scenario.points ?? []).filter((point) => !validateMetric(point).length).length > 1);
+  const qualitative = scenarios.filter((scenario) => scenario.value_type === "QUALITATIVE" || (!scenario.points?.length && (scenario.assumptions?.length || scenario.trigger_conditions?.length)));
+  const visible = modelled.length ? modelled : qualitative;
+  const periods = [...new Set(modelled.flatMap((scenario) => scenario.points?.map((point) => point.period ?? "") ?? []))];
+  const option = useMemo(() => modelled.length ? {
     tooltip: { trigger: "axis" as const },
     legend: { type: "scroll" as const },
     grid: { left: 56, right: 24, top: 52, bottom: 52 },
     xAxis: { type: "category" as const, data: periods, name: "期间" },
-    yAxis: { type: "value" as const, name: usable[0].points?.[0]?.unit ?? "" },
-    series: usable.map((scenario) => ({ name: scenario.label, type: "line", lineStyle: { type: "dashed" }, data: periods.map((period) => scenario.points?.find((point) => point.period === period)?.value ?? null) })),
-  } : null, [usable, periods]);
-  if (!option) return <EmptyState reason="缺少保守、基准或乐观情景的结构化假设与至少两个时间点。" />;
-  return <section className="panel"><header><h2>情景分析</h2><p>虚线表示情景或未来计划；不是历史事实</p></header><EChart option={option} ariaLabel="战略情景趋势图" /><div className="scenario-briefs">{usable.map((scenario) => <article key={scenario.scenario_id}><div><strong>{scenario.label}</strong><span className="badge">{scenario.confidence ?? "置信度待评估"}</span></div><p><b>关键假设</b>{scenario.assumptions?.join("；") || "待补充"}</p><p><b>触发条件</b>{scenario.trigger_conditions?.join("；") || "待补充"}</p></article>)}</div><p className="source-note">情景依据：{[...new Set(usable.flatMap((item) => item.source_fact_ids))].join("、")}</p></section>;
+    yAxis: { type: "value" as const, name: modelled[0].points?.[0]?.unit ?? "" },
+    series: modelled.map((scenario) => ({ name: scenario.label, type: "line", lineStyle: { type: "dashed" }, data: periods.map((period) => scenario.points?.find((point) => point.period === period)?.value ?? null) })),
+  } : null, [modelled, periods]);
+  if (!visible.length) return <EmptyState reason="缺少可审计的情景假设、触发条件或至少两个量化时间点。" />;
+  return <section className="panel"><header><h2>情景分析</h2><p>{option ? "虚线表示情景或未来计划；不是历史事实" : "证据不足以支持数值预测，以下为定性决策情景"}</p></header>{option ? <EChart option={option} ariaLabel="战略情景趋势图" /> : null}<div className="scenario-briefs">{visible.map((scenario) => <article key={scenario.scenario_id}><div><strong>{scenario.label}</strong><span className="badge">{scenario.confidence ?? "置信度待评估"}</span></div><p><b>关键假设</b>{scenario.assumptions?.join("；") || "待补充"}</p><p><b>触发条件</b>{scenario.trigger_conditions?.join("；") || "待补充"}</p>{scenario.implications ? <p><b>战略影响</b>{scenario.implications}</p> : null}{scenario.actions?.length ? <p><b>应对行动</b>{scenario.actions.join("；")}</p> : null}</article>)}</div><p className="source-note">情景依据：{[...new Set(visible.flatMap((item) => item.source_fact_ids))].join("、") || "未引用外部事实；仅为条件式管理判断"}</p></section>;
 }
 
 export function WaterfallChart({ metrics }: { metrics: Metric[] }) {

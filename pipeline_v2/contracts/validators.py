@@ -77,9 +77,18 @@ def fact_check_gate(payload, context):
     sources = {row.get("source_id"): row for row in context.get("sources", [])}
     observations = {row.get("observation_id") for row in context.get("observations", [])}
     errors = []
-    linked_observations = {value for claim in payload.get("claims", []) for value in claim.get("observation_ids", []) if value}
+    ledger = payload.get("observation_verifications", [])
+    linked_observations = {row.get("observation_id") for row in ledger if row.get("observation_id")}
     if observations and linked_observations != observations:
         errors.append(issue("FACT_OBSERVATION_COVERAGE", "Fact Check must account for every canonical Observation, including NOT_CHECKED records", stage="fact_check", artifact="03_fact_check.json", expected=sorted(observations), actual=sorted(linked_observations), repair_type="STAGE_RETRY"))
+    if "research_claims" in context:
+        research_claim_ids = {row.get("claim_id") for row in context.get("research_claims", []) if row.get("claim_id")}
+        verified_claim_ids = {row.get("claim_id") for row in payload.get("claims", []) if row.get("claim_id")}
+        if research_claim_ids != verified_claim_ids:
+            errors.append(issue("FACT_CLAIM_COVERAGE", "Fact Check must account for every research Claim", stage="fact_check", artifact="fact_check/verified_claims.json", expected=sorted(research_claim_ids), actual=sorted(verified_claim_ids), repair_type="STAGE_RETRY"))
+    for index, record in enumerate(ledger):
+        if record.get("observation_id") not in observations:
+            errors.append(issue("FACT_OBSERVATION_LINK", "Fact Check references a missing Observation", stage="fact_check", artifact="03_fact_check.json", location=f"/observation_verifications/{index}/observation_id", entity_id=record.get("observation_id", ""), repair_type="STAGE_RETRY"))
     for index, claim in enumerate(payload.get("claims", [])):
         if claim.get("verification_status") == "SUPPORTED":
             linked = [sources.get(value) for value in claim.get("source_ids", [])]
@@ -114,6 +123,32 @@ def strategy_gate(payload, context):
         unknown = set(recommendation.get("review_ids") or []) - review_ids
         if unknown:
             errors.append(issue("STRATEGY_UNKNOWN_REVIEW_ID", "Strategy references review IDs that do not exist", stage="strategy", artifact="strategy/recommendations.json", location=f"/recommendations/{index}/review_ids", actual=sorted(unknown), repair_type="STAGE_RETRY"))
+    report_model = payload.get("report_model") or {}
+    for collection in ("risks", "opportunities"):
+        items = report_model.get(collection)
+        if not isinstance(items, list) or not items:
+            errors.append(issue(
+                f"STRATEGY_{collection.upper()}_REQUIRED",
+                f"Strategy must provide at least one structured {collection} item",
+                stage="strategy", artifact="strategy/report_model.json",
+                location=f"/{collection}", repair_type="STAGE_RETRY",
+            ))
+            continue
+        for index, item in enumerate(items):
+            claim_ids = item.get("claim_ids") if isinstance(item, dict) else None
+            if not item.get("label") or not (item.get("description") or item.get("rationale") or item.get("text")):
+                errors.append(issue(
+                    "STRATEGY_DECISION_ITEM_CONTENT", "Structured risk/opportunity needs label and description",
+                    stage="strategy", artifact="strategy/report_model.json",
+                    location=f"/{collection}/{index}", repair_type="STAGE_RETRY",
+                ))
+            linked = [claims.get(value) for value in (claim_ids or [])]
+            if not linked or any(row and row.get("verification_status") == "UNSUPPORTED" for row in linked):
+                errors.append(issue(
+                    "STRATEGY_DECISION_ITEM_EVIDENCE", "Structured risk/opportunity must link to supported or partial Claims",
+                    stage="strategy", artifact="strategy/report_model.json",
+                    location=f"/{collection}/{index}/claim_ids", repair_type="STAGE_RETRY",
+                ))
     return result(errors)
 
 

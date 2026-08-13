@@ -57,6 +57,26 @@ class DataPipelineTests(unittest.TestCase):
             dataset_ids = {item["dataset_id"] for item in build_requirements(CASES[case_id])["datasets"]}
             self.assertTrue(expected <= dataset_ids)
 
+    def test_company_strategy_airline_metrics_are_industry_specific(self):
+        industrial = build_requirements({
+            "analysis_type": "COMPANY_STRATEGY",
+            "industry": "energy management and industrial automation",
+        })
+        industrial_operating = next(
+            row for row in industrial["datasets"] if row["dataset_id"] == "operating_metrics"
+        )
+        self.assertEqual(industrial_operating["required_metrics"], [])
+        self.assertEqual(industrial_operating["dashboard_components"], [])
+
+        aviation = build_requirements({
+            "analysis_type": "COMPANY_STRATEGY", "industry": "aviation",
+        })
+        aviation_operating = next(
+            row for row in aviation["datasets"] if row["dataset_id"] == "operating_metrics"
+        )
+        self.assertIn("passenger_count", aviation_operating["required_metrics"])
+        self.assertIn("OperatingMetricsTimeSeries", aviation_operating["dashboard_components"])
+
     def test_observation_schema_validation(self):
         row = dict(TEA_COMPETITOR_ACQUISITION["observations"][0])
         row.setdefault("observation_id", "O1")

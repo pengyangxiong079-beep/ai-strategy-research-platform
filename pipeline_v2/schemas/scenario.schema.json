@@ -10,7 +10,7 @@
         "label": {"type": "string", "minLength": 1},
         "base_period": {"type": "string"},
         "end_period": {"type": "string"},
-        "value_type": {"const": "MODELLED"},
+        "value_type": {"enum": ["MODELLED", "QUALITATIVE"]},
         "starting_value": {"type": ["number", "null"]},
         "annual_points": {"type": "array"},
         "assumptions": {"type": "array"},

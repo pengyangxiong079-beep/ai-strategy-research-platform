@@ -118,6 +118,16 @@ export default function(component) {
       return
     }
     popup.document.open()
+    if (data?.html) {
+      const blob = new Blob([data.html], { type: "text/html;charset=utf-8" })
+      const url = URL.createObjectURL(blob)
+      const params = new URLSearchParams({ run_id: data.run_id || "", revision: data.revision || "current" })
+      popup.location.replace(`${url}#${params}`)
+      popupByElement.set(parentElement, popup)
+      status.textContent = `已打开 ${data.filename || "dashboard.html"}。`
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+      return
+    }
     popup.document.write(loadingDocument(data?.title))
     popup.document.close()
     popupByElement.set(parentElement, popup)
@@ -157,6 +167,27 @@ def render_dashboard_html_action(output_folder, revision_id=None, *, title=None)
     component_key = _component_key(output_folder, revision_id)
     result_key = f"{component_key}_result"
     st.session_state.setdefault(result_key, {})
+
+    # Build once when the Results page first becomes available.  Subsequent
+    # clicks open the prepared self-contained HTML immediately, so a browser
+    # popup cannot be stranded on the loading document if a Streamlit callback
+    # reruns or the component is remounted.
+    if not st.session_state[result_key]:
+        try:
+            destination = generate_dashboard_html(output_folder, revision_id)
+            st.session_state[result_key] = {
+                "request_id": None,
+                "html": destination.read_text(encoding="utf-8"),
+                "filename": destination.name,
+                "error": "",
+            }
+        except (DashboardExportError, OSError, TypeError, ValueError) as error:
+            st.session_state[result_key] = {
+                "request_id": None,
+                "html": "",
+                "filename": "",
+                "error": f"HTML 看板生成失败：{error}",
+            }
 
     def generate_for_request():
         component_state = st.session_state.get(component_key, {})

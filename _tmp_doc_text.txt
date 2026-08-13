@@ -1,0 +1,269 @@
+================================================================================
+无生展示课.docx
+paragraphs=49 tables=8
+P000 [Normal] 无生展示课九年级Unit1
+P001 [Normal] 
+P002 [Normal] 开场：
+P003 [Normal] Class begins! Good morning, boys and girls! Sit down please.
+P004 [Normal] 
+P005 [Normal] 复习：
+P006 [Normal] Time goes by! The long summer vacation has passed. Did you have a good summer vacation? 
+P007 [Normal]    Yes? OK.
+P008 [Normal] What did you do in summer vacation?
+P009 [Normal]     You go to Yunnan, Oh no, You went o Yunnan. You played games for a long time every day in summer vacation. I’m sorry to hear that. I think your mother must be very worried about that. Peter, You learned English. Oh I am so glad to hear that. 
+P010 [Normal] What did you do about learning English? It means How did you do that?
+P011 [Normal] You read English books. You did English exercises, You had English classes, You spoke English with native speakers on line. Oh, It’s a good way to practice English.
+P012 [Normal] It happened in the past / in the summer vacation, so we should change the verbs into the past tense. Do you know their base verbs? 
+P013 [Normal] （逐字改）(Repeat1: “read/read, look similar but have different pronunciation. Repeat 2 )
+P014 [Normal] 
+P015 [Normal] 新授：
+P016 [Normal] OK，now, look at the blackboard, They are some ways to learn English that we often use, right? Which way do you often use to learn English?
+P017 [Normal] Peter, read English? You often read English to learn English. Yes.
+P018 [Normal] It means “How do you learn English?” You can answer it like this. “I learn English by reading English books.”Have you got it? Can you make the following sentences like this? HAVE -- We should remove the silent “e” add “ing”(逐字改)
+P019 [Normal] 
+P020 [Normal] 练：
+P021 [Normal] Peter，How do you learn English? Yes, How about you, Mary? Thank you. 
+P022 [Normal] And You can answer the question with “By doing” for short.
+P023 [Normal] 
+P024 [Normal] It’s similar to the topic of Unit 1. The title of Unit 1 is “How can you become a good learner?” I think we can begin from a good English learner, right? Just now, we got the structure about the conversation.  
+P025 [Normal] 
+P026 [Normal] 
+P027 [Normal] 新授2：
+P028 [Normal] Some of people think learning English is easy and some of them think it’s not. I think “A good way will make things easier and better.”. So let’s study more good ways to learn English.
+P029 [Normal] 
+P030 [Normal] 听力练习：
+P031 [Normal] Take out your book, please turn to page 1, listen to the tape, and listen twice. After the first time, answer my question “Are they talking about English learning?”
+P032 [Normal]    Listen please,... OK, The answer is “No?” It talks about “study for a big English test”. Yes, you’re perfect.
+P033 [Normal] Listen to the second time, “How do they study for a big test?” Pay attention to some key words.    
+P034 [Normal] 
+P035 [Normal] OK, good job, Anybody can answer my questions with full sentences?
+P036 [Normal] Meiping studies for a big test by making word cards
+P037 [Normal] Peter studies for a big test by asking the teacher for help
+P038 [Normal] Tony studies for a big test by listening to the tapes.
+P039 [Normal] 
+P040 [Normal] 合作练习：
+P041 [Normal] OK, It’s time for group work. We have twelve groups in our class. And there are 4-5 students in each group. Please read the rules of the group work first...
+P042 [Normal] The title of the report is “How can you become a good English learner?”
+P043 [Normal] You can follow the structures on the blackboard to finish your group work. 
+P044 [Normal] 
+P045 [Normal] Put your hands together for yourselves(clap). “Practice makes perfect” you have to know that don’t be afraid of making mistakes and learn from it.
+P046 [Normal] 
+P047 [Normal] Dear kids, “Learning is a lifelong journey.” It’s full of discoveries, challenges, and growth. “ Learn wisely and learn well”. I hope you can find your own suitable ways to learn English. Thanks for listening!
+P048 [Normal] 
+TABLE 0 (1x1)
+  R00:                                read English books /                                did English exercises /                                had English classes /                                spoke English with native speakers
+TABLE 1 (1x1)
+  R00:                          read    English books /                          do     English exercises /                          have    English classes /                          speak    English with native speakers
+TABLE 2 (1x1)
+  R00: How do you learn English? /           I learn English by  reading English books  /                           doing English exercises /                           having English classes /                           speaking English with native speakers
+TABLE 3 (1x1)
+  R00: 希沃1 / How do you learn English? / (How can you become a good English learner?) / I learn... by doing... / By doing... / 
+TABLE 4 (1x1)
+  R00: 希沃2  / Listening skills: listen to tapes /                       Listen to English songs /  English               watch English movies or videos / Learning   Speaking skills: work with friends /  skills                  study with a group  / have conversation with friends in English         / ask the teacher for help / Reading skills: read the textbook / read aloud to practice pronunciation / Writing skills: make word cards /                     study grammar /                     keep a diary in English / 
+TABLE 5 (1x1)
+  R00: 希沃3          Meiping             by making word cards /                Peter                by asking the teacher for help /                Tony                by listening to tapes
+TABLE 6 (1x1)
+  R00: 希沃 4          / Conversation:  A: How do you learn English? /              B: I learn English by reading books. /              A:Do you think it’s the best way to learn English?Why? / B: Yes, I think it’s interesting ... / Report: / How can you become a good learner? /   Hello, everyone, I am the leader of Group___, There are___ students in my group, we have different ways to learn English,  A learn English by    reading books, he thinks it is  interesting . B learns by ___________ ... Thanks for listening, thank you. /   / 参考词汇：not bored, the most important, useful, challenging,  / helpful, valuable / 
+TABLE 7 (1x1)
+  R00: 希沃5   / Learning is a lifelong journey. / Learn wisely and learn well. / 
+================================================================================
+无生展示课_初中英语过去时态复习_专业优化版.docx
+paragraphs=137 tables=10
+P000 [Normal] 教学展示赛 · 15分钟无生课堂
+P001 [Normal] A Trip Back in Time
+P002 [Normal] 初中英语一般过去时复习
+P003 [Normal] 从“识别过去”到“讲述过去”的任务型复习课
+P004 [Heading 1] 一句话设计
+P005 [Normal] 核心主张  让学生在一条完整的“回忆修复”任务链中，发现时态线索、修正语言形式、完成真实表达；复习不止于规则再现，而落到迁移运用。
+P006 [Heading 2] 比赛亮点
+P007 [List Bullet] 主线聚焦：过去时间线索 → 句式结构 → 情境表达，彻底避免原稿中“过去时 / by doing”双主题冲突。
+P008 [List Bullet] 目标可评：每个教学目标都对应一项看得见的学习证据与即时评价。
+P009 [List Bullet] 无生可演：逐字稿含停顿、走位、指板、预设回应与追问，既呈现互动又不过度表演。
+P010 [List Bullet] 思维进阶：识别（notice）→ 纠错（repair）→ 询问（interact）→ 讲述（create）。
+P011 [Normal] 大问题  How can we make a past memory clear, correct and interesting?
+P012 [Normal] 
+P013 [Heading 1] 一、教学设计总览
+P014 [Heading 2] 1. 学情与内容定位
+P015 [Normal] 学生已学过一般过去时的基本形式，但常见问题集中在三处：只看动词不看时间线索；否定句、疑问句中 did 与动词原形重复变形；能够做单句练习，却难以连贯讲述一次过去经历。本课以“暑假回忆卡损坏”为情境，把零散语法知识转化为表达工具。
+P016 [Heading 2] 2. 三维学习目标与达成证据
+P017 [Normal] 
+P018 [Heading 2] 3. 重点、难点与破解策略
+P019 [Normal] 重点  一般过去时的语境判断与三类核心句式：affirmative / negative / yes-no question。
+P020 [Normal] 难点  在连续语篇中保持时态一致，并用细节与感受使回忆完整。
+P021 [Normal] 策略  时间轴可视化 + 对比纠错 + 问答支架 + PAST 自检，实现从形式到意义再到使用。
+P022 [Heading 2] 4. 15分钟节奏图
+P023 [Normal] 
+P024 [Normal] 
+P025 [Heading 1] 二、教学支架与课件规划
+P026 [Heading 2] 1. 板书设计（边生成、边归纳）
+P027 [Normal] 布局原则  左侧看时间，中间看结构，右侧看表达；板书不是答案墙，而是学生完成任务的思维地图。
+P028 [Heading 2] 2. PAST 自检表
+P029 [Normal] 
+P030 [Heading 2] 3. 课件页面清单（6页足够）
+P031 [Normal] 
+P032 [Normal] 课件控制  每页只承担一个认知动作；文字不超过6行；动画只用于“呈现顺序”，不用于装饰。
+P033 [Normal] 
+P034 [Heading 1] 三、15分钟无生展示逐字稿
+P035 [Normal] 使用说明  蓝色块为教师英语；绿色为预设学生回应；金色为表演提示。现场可根据语速微调，但不要删掉“理由追问”和“评价闭环”。
+P036 [Normal] 0:00-1:20  Lead in · Open the memory box  ·  情境导入 + 激活旧知
+P037 [Normal] [微笑，环视] Good morning, everyone. Today, I brought a special box — my summer memory box. Look! The photo is not clear. Some words are missing, too. Can you help me repair the memory?
+P038 [Normal] 预设回应：Of course! / Yes!
+P039 [Normal] 表演提示：停顿约2秒，目光从左至右；点击课件第1页。
+P040 [Normal] [指向照片] First, one quick question: Is it happening now, or did it happen in the past?
+P041 [Normal] 预设回应：It happened in the past.
+P042 [Normal] 表演提示：用手势指向身后，强化 past 的空间感。
+P043 [Normal] [追问] Exactly. What clue helped you?
+P044 [Normal] 预设回应：Last summer.
+P045 [Normal] 表演提示：板书 last summer；用一句评价把答案提升为方法。
+P046 [Normal] 教师评价：Great noticing! A time clue tells us when the action happened — and helps us choose the tense.
+P047 [Normal] 1:20-4:10  Notice · Build the past-time map  ·  意义—形式—用法归纳
+P048 [Normal] [呈现时间轴] Put these expressions on the timeline: yesterday, last summer, two days ago, in 2025. Past or now?
+P049 [Normal] 预设回应：Past. They all point to the left side of the timeline.
+P050 [Normal] 表演提示：依次指向时间词，不替学生逐个念答案。
+P051 [Normal] [呈现例句] Last summer, I went to Qingdao. I didn't stay at home. Did I travel alone? No, I didn't. Read the three sentences and tell me: what changes, and what stays the same?
+P052 [Normal] 预设回应：went changes to didn't stay / Did ... travel; the time remains past.
+P053 [Normal] 表演提示：先给5秒观察，再请“学生”归纳。
+P054 [Normal] [归纳] Well found. In an affirmative sentence, we use V-ed or the irregular past form. After didn't or Did, the verb goes back to its base form. Say it with me: did — base form.
+P055 [Normal] 预设回应：did — base form.
+P056 [Normal] 表演提示：板书三行结构，并在 did 与 V 之间画箭头。
+P057 [Normal] [检查理解] So, which one is correct: 'I didn't went' or 'I didn't go'? Why?
+P058 [Normal] 预设回应：I didn't go, because the verb after didn't must be in the base form.
+P059 [Normal] 表演提示：必须追问 why，体现从答案到规则。
+P060 [Normal] 微型语音点  规则过去式 -ed：/t/ watched，/d/ played，/ɪd/ visited。只做快速辨音，不展开成第二条教学主线。
+P061 [Normal] 
+P062 [Normal] 4:10-7:10  Repair · Fix the broken memories  ·  分层纠错 + 理由表达
+P063 [Normal] [任务指令] Four memories are broken. Work as language doctors: find the problem, repair it, and give one reason. You have twenty seconds.
+P064 [Normal] 表演提示：身体略后退，静默扫视；20秒后回到屏幕侧。
+P065 [Normal] 
+P066 [Normal] [分层反馈] Number one? Yes — went. You used the time clue. Number two? Excellent. Not only did you correct it, but you also explained the rule. Number three, this side please... Right, see, not saw. And number four? The weather was sunny.
+P067 [Normal] 预设回应：went / play / see / was
+P068 [Normal] 表演提示：用不同方向虚拟点名；每次反馈角度不同，避免机械重复。
+P069 [Normal] [提升] Now compare sentences two and three. What is the same?
+P070 [Normal] 预设回应：Both use did, so both use the base form.
+P071 [Normal] 表演提示：在屏幕上同时圈出 didn't 和 Did，完成结构迁移。
+P072 [Normal] 即时评价：If you can find the time clue, repair the verb and explain why, you earn three memory stars.
+P073 [Normal] 7:10-11:20  Interact · Interview the memory owner  ·  从单句到完整问答
+P074 [Normal] [展示信息卡] The sentences are correct now, but the memory is still not complete. A clear memory answers four questions: Where did you go? Who did you go with? What did you do? How was it?
+P075 [Normal] 表演提示：右侧板书四个关键词：Where / Who / What / How。
+P076 [Normal] [示范问答] Listen to my first question: Where did you go last summer?
+P077 [Normal] 预设回应：I went to Qingdao.
+P078 [Normal] 表演提示：先示范问题重音，再把回答补成完整句。
+P079 [Normal] [追问链] Who did you go with? What did you do there? How was the trip?
+P080 [Normal] 预设回应：I went with my family. We walked along the beach and took photos. It was exciting.
+P081 [Normal] 表演提示：每问停顿2秒；用表情回应内容，不只评价语法。
+P082 [Normal] [同伴任务] Now, Student A is the memory detective; Student B is the memory owner. Ask at least two follow-up questions. Then change roles. You have forty seconds. Go!
+P083 [Normal] 表演提示：静默走两步，做倾听状；约25秒提示 Change roles，40秒时击掌收回。
+P084 [Normal] [展示反馈] Time's up. I heard a clear question from this pair: 'What did you do there?' And I like the detail 'we watched the sunrise'. Details make a memory interesting.
+P085 [Normal] 表演提示：反馈必须引用“听到的语言”，让无生互动显得有依据。
+P086 [Normal] 
+P087 [Normal] 11:20-13:50  Create · Make a memory postcard  ·  语篇输出 + 同伴评价
+P088 [Normal] [发布主任务] Now turn your answers into a memory postcard. Write or say at least four sentences. Use one time clue, two past verbs, one sequence word and one feeling. The PAST checklist is your helper.
+P089 [Normal] 表演提示：指向板书与屏幕右下角的 PAST 自检表。
+P090 [Normal] 示范产出  Last summer, I went to Qingdao with my family. First, we walked along the beach. Then, we took many photos. The trip was short but exciting, and I learned to enjoy time with my family.
+P091 [Normal] [同伴评价] Exchange your postcards. Don't just say 'good'. Use PAST: 'You have a clear past-time clue.' 'Your verbs are accurate.' 'You can add a sequence word.' 'Tell us more about your feeling.'
+P092 [Normal] 表演提示：以四根手指对应 P-A-S-T；语气体现“具体、友善、可改进”。
+P093 [Normal] [展示与提升] Let's enjoy one postcard. Listen for one strength and one suggestion... Thank you. Your time clue and verbs are clear. If you add 'then', the story will be easier to follow.
+P094 [Normal] 表演提示：先肯定目标达成，再给单一、可操作建议。
+P095 [Normal] 13:50-15:00  Assess · Close the loop  ·  出门条 + 迁移
+P096 [Normal] [出门条] Before we close the memory box, complete the exit ticket: Yesterday, Lucy ___ to the library. She didn't ___ TV. ___ she borrow a book?
+P097 [Normal] 预设回应：went; watch; Did
+P098 [Normal] 表演提示：三空依次对应肯定、否定、疑问；用手势示意全班同时作答。
+P099 [Normal] [总结] Today, we learned to make a past memory clear: find the past-time clue, choose accurate verb forms, put events in sequence, and add a true feeling. That's P-A-S-T.
+P100 [Normal] 表演提示：指板完成回扣；不要再次长篇讲规则。
+P101 [Normal] [价值升华] The past is not only a tense in a grammar book. It is the story of who we were and how we grew. Record it clearly, and treasure it deeply. Thank you, everyone.
+P102 [Normal] 表演提示：语速放慢，合上“memory box”，自然结束。
+P103 [Heading 2] 分层课后迁移（口头交代即可）
+P104 [List Bullet] 基础层：完善 Memory Postcard，圈出时间词，给过去式加下划线。
+P105 [List Bullet] 提升层：录制60秒 My Unforgettable Day，至少使用2个追问答案和2个顺序词。
+P106 [Normal] 
+P107 [Heading 1] 四、评价设计与无生展示策略
+P108 [Heading 2] 1. 目标—活动—评价一致性
+P109 [Normal] 
+P110 [Heading 2] 2. 无生课堂的“真互动”做法
+P111 [List Bullet] 提问后真实停顿2-3秒，再复述预设答案；不要自问自答连成一串。
+P112 [List Bullet] 用“我听到的具体语言”反馈，如 I heard 'watched the sunrise'，而不是只说 Good / Perfect。
+P113 [List Bullet] 虚拟点名不使用固定人名反复演戏，可用 this side / the student in the second row / this pair。
+P114 [List Bullet] 预设错误要服务教学重点：went、didn't play、Did...see、was，覆盖面明确且不过量。
+P115 [List Bullet] 模拟巡视必须有教学结果：收回课堂后，说出观察到的一个亮点和一个共性问题。
+P116 [Heading 2] 3. 临场节奏与删减预案
+P117 [Normal] 
+P118 [Heading 2] 4. 语言与教态控制
+P119 [Normal] 语言  指令短、问题清、评价具体；核心指令说一遍，必要时用屏幕关键词支撑，不做长篇中译英。
+P120 [Normal] 走位  左侧时间轴讲“过去”，中间结构讲“形式”，右侧作品区讲“表达”；三次移动对应三次认知进阶。
+P121 [Normal] 语速  导入自然（约135 wpm），归纳放慢，活动指令分句，结尾留停顿；15分钟目标总字数控制在约1150-1300词。
+P122 [Normal] 
+P123 [Heading 1] 五、说课式设计说明（评委视角）
+P124 [Heading 2] 1. 为什么这样设计
+P125 [Normal] 本课不把复习理解为“重新讲一遍规则”，而是把一般过去时置于“修复一段回忆”的真实意义框架中。时间轴解决时态选择，结构对比解决形式易错点，采访任务制造信息差，明信片输出促成语篇迁移，PAST 自检则让评价真正参与学习。
+P126 [Normal] 15分钟内，课堂经历一个完整闭环：学生先发现语言，再解释语言，然后使用语言，最后评价语言。每一环都留下可观察证据，因此评委看到的不只是教师讲得流畅，更能看到学生可能如何学习、如何进步。
+P127 [Heading 2] 2. 与原稿相比的关键优化
+P128 [Normal] 
+P129 [Heading 2] 3. 上场前最后检查
+P130 [Normal] □  课件第1页能在5秒内进入问题情境；所有动画都可一键继续。
+P131 [Normal] □  板书预留三栏，did → base form 的箭头可一次写清。
+P132 [Normal] □  逐字稿已用本人正常语速完整计时2次，稳定在14:20-14:40。
+P133 [Normal] □  每个活动指令都包含：做什么、做到什么程度、用多长时间。
+P134 [Normal] □  至少有一次理由追问、一次引用式反馈、一次改进性反馈。
+P135 [Normal] □  结束前一定完成 Exit Ticket，并用 PAST 回扣大问题。
+P136 [Normal] 最终提醒  比赛现场要呈现的是“学生如何学会”，而不只是“教师知道多少”。所有语言、动作与课件切换，都应服务于这一点。
+TABLE 0 (3x4)
+  R00: 适用年级 || 九年级 / 中考复习 || 课型 || 语法复习 + 口语表达
+  R01: 展示时长 || 15分钟 || 核心任务 || 完成一张 Memory Postcard
+  R02: 主题语境 || 人与自我 · 丰富生活经历 || 评价工具 || PAST 自检表
+TABLE 1 (5x3)
+  R00: 学习目标 || 课堂达成证据 || 评价方式
+  R01: 语言能力 || 能根据过去时间线索选用一般过去时，并正确使用肯定、否定和一般疑问结构。 || 口头快答 + 纠错题
+  R02: 思维品质 || 能说明“为什么要改”，归纳 did 后用动词原形的规律。 || 理由追问
+  R03: 学习能力 || 能使用 PAST 自检表监控表达，完成4句以上的回忆明信片。 || 同伴互评 + 出门条
+  R04: 文化意识 || 愿意倾听、分享真实经历，理解普通生活也值得记录。 || 表达内容与倾听表现
+TABLE 2 (7x4)
+  R00: 时间 || 环节 || 学生认知动作 || 核心产出
+  R01: 0:00-1:20 || Lead in · 打开回忆 || 感知语境 || 识别“过去”
+  R02: 1:20-4:10 || Notice · 找到线索 || 观察、归纳 || 时间词 + 句式图
+  R03: 4:10-7:10 || Repair · 修复句子 || 辨析、解释 || 4类典型错误
+  R04: 7:10-11:20 || Interact · 追问记忆 || 提问、回应 || 完整问答链
+  R05: 11:20-13:50 || Create · 制作明信片 || 组织、表达 || 4句微语篇
+  R06: 13:50-15:00 || Assess · 自检迁移 || 评价、迁移 || 出门条 + 分层任务
+TABLE 3 (3x3)
+  R00: PAST TIME CLUES || FORM || MY MEMORY
+  R01: yesterday / last ... / ... ago / in 2025 || +  S + V-ed / V2 / -  S + didn't + V / ?  Did + S + V ...? || Where? / Who with? / What happened? / How was it?
+  R02: PAST CHECK || did → base form || P · A · S · T  ✓
+TABLE 4 (5x3)
+  R00: 字母 || 检查问题 || 学生可说
+  R01: P · Past time || 我交代过去时间了吗？ || Last summer / yesterday / two days ago ...
+  R02: A · Accurate verbs || 动词过去式或 did + 原形正确吗？ || went; didn't go; Did ... go?
+  R03: S · Sequence || 事件有顺序吗？ || First, then, after that ...
+  R04: T · True feeling || 我表达真实感受了吗？ || It was exciting / meaningful ...
+TABLE 5 (7x4)
+  R00: 页 || 屏幕内容 || 动态呈现 || 教学作用
+  R01: 1 || 模糊的暑假照片 + Memory loading... || 照片由模糊变清晰 || 制造信息差，进入过去语境
+  R02: 2 || Past / Now 时间轴与4个时间词 || 时间词逐个落到 Past || 先意义、后形式
+  R03: 3 || 肯定—否定—疑问结构 || didn't / Did 高亮，V2 回到 V || 形成结构对比
+  R04: 4 || 4条“损坏的回忆” || 点击后只显示修改处 || 纠错并说理由
+  R05: 5 || Memory Card：where / who / what / feeling || 问题逐层出现 || 搭建问答与语篇支架
+  R06: 6 || PAST 自检 + Exit Ticket || 勾选动画 || 评价闭环与迁移
+TABLE 6 (5x3)
+  R00: 损坏句 || 修复结果 || 理由 / 诊断点
+  R01: 1. I go to Qingdao last summer. || I went to Qingdao last summer. || last summer → past form
+  R02: 2. We didn't played games. || We didn't play games. || didn't + base form
+  R03: 3. Did you saw the sea? || Did you see the sea? || Did + subject + base form
+  R04: 4. The weather were sunny. || The weather was sunny. || weather = singular → was
+TABLE 7 (5x4)
+  R00: 目标 || 学习活动 || 可观察证据 || 教师评价语
+  R01: 识别语境 || 时间轴归类 || 能指出 past-time clue || Great noticing — you used the clue.
+  R02: 掌握结构 || 四句纠错 || 能改对且说明 why || You corrected it and explained the rule.
+  R03: 完成互动 || 四问采访 || 问题含 Did / 回答完整 || Your follow-up question made the memory clearer.
+  R04: 形成语篇 || Memory Postcard || 满足 PAST 四项 || Your sequence is clear; add one true feeling.
+TABLE 8 (5x3)
+  R00: 现场情况 || 立即处理 || 绝不删减
+  R01: 超时30秒 || 纠错题4减为3；同伴展示只保留1组反馈。 || why 追问、PAST 自检、出门条
+  R02: 提前30秒 || 增加追问：What made the trip special? || 不重复讲规则
+  R03: 设备故障 || 用板书时间轴 + 四句纠错卡继续；口头描述照片。 || 任务主线与最终产出
+  R04: 紧张忘词 || 抓住六个路标词：Open—Notice—Repair—Interview—Create—Assess。 || 开头大问题与结尾回扣
+TABLE 9 (6x2)
+  R00: 原稿风险 || 专业优化
+  R01: 过去时复习中途转入 by doing，教学主题分裂 || 全课统一为过去时意义—形式—使用任务链
+  R02: 只涉及若干过去式，否定与疑问结构缺位 || 用四句纠错覆盖 V2、didn't + V、Did + V、was/were
+  R03: 听录音、12组合作等安排不适合15分钟无生展示 || 改为可演示的短停顿、同伴采访与可见产出
+  R04: Good / Perfect 等笼统评价较多 || 评价指向时间线索、动词形式、追问质量与语篇顺序
+  R05: 结尾价值升华与学习过程连接较弱 || 由 PAST 自检自然过渡到“记录成长”，形成首尾照应

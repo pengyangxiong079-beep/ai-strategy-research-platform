@@ -52,4 +52,17 @@ describe("responsive components", () => {
     expect(screen.getByText("关键假设").parentElement).toHaveTextContent("转化率达到18%");
     expect(screen.getByText("触发条件").parentElement).toHaveTextContent("两个付费样板达标");
   });
+
+  it("shows qualitative scenario cards without inventing chart points", () => {
+    render(<ScenarioChart scenarios={[{
+      scenario_id: "S2", label: "审慎情景", value_type: "QUALITATIVE",
+      assumptions: ["资本回报证据不足"], trigger_conditions: ["利用率未达内部门槛"],
+      implications: "暂停未经验证的扩张", actions: ["优先补全证据"],
+      source_fact_ids: [], confidence: "LOW", points: [],
+    }]} />);
+    expect(screen.getByText("证据不足以支持数值预测，以下为定性决策情景")).toBeInTheDocument();
+    expect(screen.getByText("审慎情景")).toBeInTheDocument();
+    expect(screen.getByText("战略影响").parentElement).toHaveTextContent("暂停未经验证的扩张");
+    expect(screen.getByText("应对行动").parentElement).toHaveTextContent("优先补全证据");
+  });
 });

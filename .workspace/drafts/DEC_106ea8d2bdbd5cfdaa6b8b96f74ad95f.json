@@ -1,0 +1,28 @@
+{
+  "draft_id": "DEC_106ea8d2bdbd5cfdaa6b8b96f74ad95f",
+  "analysis_type": "公司战略",
+  "topic": "Microsoft FY2026–FY2028 云与生成式AI增长战略",
+  "objective": "基于截至2025年9月30日公开且可核验的信息，评估Microsoft云计算与生成式AI业务的增长质量、资本投入效率、商业化路径和主要风险，并形成FY2026–FY2028战略优先级、情景分析、执行路线图及可量化KPI。事实、推断和预测必须明确区分；缺少可比证据时应披露限制，不得推测市场份额或虚构数据。",
+  "industry": "企业软件、云计算与人工智能基础设施",
+  "geography": "全球（重点关注美国、欧洲和亚太）",
+  "analysis_date": "2026-08-13",
+  "time_horizon": "FY2026–FY2028（未来3个财年）",
+  "depth": "深度版",
+  "currency": "USD",
+  "language": "中文",
+  "focus_questions": [
+    "Microsoft过去三个财年的收入、营业利润、资本开支和云业务增长呈现什么趋势？",
+    "Azure与生成式AI相关需求能否转化为可持续收入和利润增长？",
+    "AI数据中心资本开支增长将如何影响自由现金流、折旧压力和资本回报？",
+    "Microsoft 365 Copilot、GitHub Copilot和Azure AI分别处于怎样的商业化阶段？",
+    "Microsoft相对于AWS、Google Cloud和Oracle的竞争优势、短板及证据边界是什么？",
+    "算力供给、能源约束、芯片供应、数据主权、反垄断和AI监管可能造成哪些影响？",
+    "FY2026–FY2028应优先配置哪些产品、基础设施、渠道和生态资源？",
+    "在基准、乐观和审慎情景下，应设置哪些触发条件、里程碑和核心KPI？"
+  ],
+  "competitors": [
+    "Amazon Web Services (AWS)",
+    "Google Cloud",
+    "Oracle Cloud Infrastructure (OCI)"
+  ]
+}

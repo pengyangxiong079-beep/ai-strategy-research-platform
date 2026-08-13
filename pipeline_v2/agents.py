@@ -9,7 +9,12 @@ from typing import Callable, Protocol
 
 STAGE_OUTPUT_CONTRACTS = {
     "data": {
-        "artifacts": ["requirements", "source_registry", "observations", "sufficiency"],
+        "artifacts": {
+            "requirements": "Object with schema_version and datasets array; never return a bare array.",
+            "source_registry": "Object with schema_version and sources array; never return a bare array.",
+            "observations": "Object with schema_version and observations array; never return a bare array.",
+            "sufficiency": "Object with schema_version, overall_status, observation_count and datasets array; never return a bare array.",
+        },
         "rules": [
             "Every Observation links to a registered Source.",
             "sufficiency.observation_count equals the Observation array length.",
@@ -34,6 +39,7 @@ STAGE_OUTPUT_CONTRACTS = {
             "severity": {"enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW", "ERROR", "WARNING", "INFO"]},
             "status": {"enum": ["OPEN", "RESOLVED", "ACCEPTED", "DEFERRED"]},
             "required_action": "Required and non-empty for OPEN items.",
+            "evidence_review": "Use the supplied Source Registry, Observations and sufficiency records; do not claim they are absent when present in inputs.",
         },
         "example": [{
             "review_id": "R1", "severity": "HIGH", "category": "evidence",
@@ -43,17 +49,23 @@ STAGE_OUTPUT_CONTRACTS = {
         }],
     },
     "fact_check": {
-        "artifact": "verified_claims",
+        "artifact": {
+            "verified_claims": {
+                "claims": "One record per input research Claim, preserving claim_id and observation_ids.",
+                "observation_verifications": "One record per canonical Observation; unclaimed observations use NOT_CHECKED and empty claim_ids.",
+            }
+        },
         "rules": [
             "Account for every canonical Observation, including NOT_CHECKED records.",
             "SUPPORTED requires a linked GRADE_A, GRADE_B or reliable GRADE_C source.",
             "Use only IDs present in inputs.",
+            "Do not collapse claim verification and observation coverage into one ambiguous array.",
         ],
     },
     "strategy": {
         "artifacts": {
-            "recommendations": "Evidence-linked actions with claim_ids and existing review_ids.",
-            "report_model": "Professional paragraphs and structured scenarios whenever scenario language is used.",
+            "recommendations": "A bare JSON array of evidence-linked action objects with claim_ids and existing review_ids. Do not wrap it in an object.",
+            "report_model": "Professional paragraphs, structured risks, structured opportunities, and structured scenarios whenever scenario language is used.",
         },
         "rules": [
             "Never use UNSUPPORTED claims as recommendation evidence.",
@@ -61,6 +73,7 @@ STAGE_OUTPUT_CONTRACTS = {
             "Separate FACT, INFERENCE, RECOMMENDATION and PENDING labels.",
             "Cover every required_sections value from input 00_analysis_scope.json with at least one paragraph section_id.",
             "Write for senior decision-makers: conclusion first, quantified evidence where supported, explicit uncertainty, accountable actions, time horizons and KPIs.",
+            "report_model.risks and report_model.opportunities each contain 1-5 concise items with label, description, claim_ids, priority/severity, timeframe and confidence; distinguish evidence from analyst judgment.",
         ],
     },
 }
@@ -157,6 +170,7 @@ def strict_output_instructions(stage: str) -> str:
         "Before responding, validate every required field, enum and referenced ID. Never invent evidence, sources, observations, claims or numeric values. "
         "When error_packet is non-empty, repair every listed JSON pointer while preserving already valid content. "
         "Use previous_invalid_output to recover valid content from a malformed prior response when available. "
+        "Always include metadata.generated_at and metadata.agent_role; these are Envelope provenance fields, not evidence. "
     )
     if stage == "review":
         base += (
@@ -165,12 +179,26 @@ def strict_output_instructions(stage: str) -> str:
             "status is exactly one of OPEN, RESOLVED, ACCEPTED, DEFERRED. OPEN requires required_action. "
         )
     if stage == "strategy":
-        base += "recommendation.review_ids may reference only IDs in input 02_review_notes.json. "
+        base += (
+            "artifacts.recommendations must be a bare JSON array, never "
+            "{\"recommendations\": [...]}. recommendation.review_ids may reference only IDs "
+            "in input 02_review_notes.json. "
+            "report_model.risks and report_model.opportunities must be JSON arrays of evidence-linked decision items, not prose headings. "
+        )
     if stage == "data":
         base += (
             "If repair_context.mode is BOUNDED_CRITICAL_GAP_SEARCH, perform the listed bounded source search now, "
             "using each target's requirement, gaps and recommended_queries. Prefer primary sources, preserve valid prior evidence, "
             "and recompute sufficiency after adding only verifiable observations. Do not return a metadata-only repair. "
+            "If repair_context.mode is TARGETED_GAP_SEARCH, search only its target_dataset_ids and queries, merge newly verified "
+            "Sources and Observations with every valid existing input artifact, and return the complete merged artifacts. "
+            "Never delete existing evidence merely because a targeted source cannot be accessed; keep unresolved gaps explicit. "
+        )
+    if stage == "fact_check":
+        base += (
+            "artifacts.verified_claims is an object with claims and observation_verifications arrays. "
+            "The claims array covers every input research claim. The observation_verifications array covers every input observation exactly once. "
+            "For observations not used by a claim, use verification_status NOT_CHECKED and claim_ids []. "
         )
     return base + "\nStage-specific contract:\n" + json.dumps(
         stage_output_contract(stage), ensure_ascii=False, indent=2

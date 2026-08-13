@@ -138,6 +138,20 @@ def valid_artifacts(stage: str) -> dict:
             "report_model": {
                 "schema_version": "2.0",
                 "title": "Example Group strategy fixture",
+                "risks": [{
+                    "item_id": "RISK_fixture_margin",
+                    "label": "Fixture margin pressure",
+                    "description": "Synthetic risk used only to verify structured delivery.",
+                    "severity": "MEDIUM",
+                    "claim_ids": [claim["claim_id"]],
+                }],
+                "opportunities": [{
+                    "item_id": "OPP_fixture_margin",
+                    "label": "Fixture margin protection",
+                    "description": "Synthetic opportunity used only to verify structured delivery.",
+                    "priority": "HIGH",
+                    "claim_ids": [claim["claim_id"]],
+                }],
                 "paragraphs": [
                     {
                         "section_id": "overview",

@@ -168,8 +168,11 @@ export interface GeographyDatum {
 export interface Scenario {
   scenario_id: string;
   label: string;
+  value_type?: "MODELLED" | "QUALITATIVE";
   assumptions?: string[];
   trigger_conditions?: string[];
+  implications?: string;
+  actions?: string[];
   confidence?: "HIGH" | "MEDIUM" | "LOW" | number | null;
   points?: Metric[];
   source_fact_ids: string[];

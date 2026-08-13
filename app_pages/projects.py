@@ -4,6 +4,7 @@ import streamlit as st
 from ui.components import empty_state, page_header
 from ui.view_models import project_view_model
 from ui.workspace import runs
+from ui.state import request_run_selection
 
 page_header("项目", "选择研究项目，或创建一个新的战略分析。")
 all_runs = runs()
@@ -30,10 +31,8 @@ else:
     with st.container(horizontal=True, vertical_alignment="center"):
         if st.button("打开项目", type="primary", icon=":material/open_in_new:", disabled=not selected_rows):
             selected = vm["projects"][selected_rows[0]]
-            st.session_state.selected_run_id = selected["run_id"]
-            st.session_state.selected_project_id = selected["project_id"]
+            request_run_selection(selected["run_id"], selected["project_id"])
             st.switch_page("app_pages/overview.py")
         if st.button("新建分析", icon=":material/add:"):
             st.switch_page("app_pages/new_analysis.py")
     st.caption(f"共 {vm['count']} 个项目；默认按最后更新时间排序。Legacy项目为只读。")
-

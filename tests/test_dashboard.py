@@ -391,6 +391,41 @@ class DashboardTests(unittest.TestCase):
         self.assertNotIn("must-not-leak", html)
         self.assertIn("dashboard-embedded-data", html)
 
+    def test_html_export_adapts_canonical_pipeline_v2_dashboard(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "run"
+            web_root = Path(temporary) / "web"
+            root.mkdir(); web_root.mkdir()
+            (web_root / "dist").mkdir()
+            (web_root / "dist/index.html").write_text(
+                "<!doctype html><html><head></head><body></body></html>", encoding="utf-8"
+            )
+            scope = report_data()["scope"]
+            (root / "00_analysis_scope.json").write_text(json.dumps(scope), encoding="utf-8")
+            (root / "run_manifest.json").write_text(json.dumps({"run_id": "v2-run", "topic": "V2"}), encoding="utf-8")
+            (root / "fact_check").mkdir(); (root / "strategy").mkdir()
+            (root / "fact_check/verified_claims.json").write_text(json.dumps({
+                "claims": [{"claim_id": "CLM_1", "display_id": "F1", "verification_status": "SUPPORTED"}],
+            }), encoding="utf-8")
+            (root / "strategy/report_model.json").write_text(json.dumps({
+                "risks": [{"item_id": "R1", "label": "Risk", "description": "Risk detail", "claim_ids": ["CLM_1"]}],
+                "opportunities": [{"item_id": "O1", "label": "Opportunity", "description": "Opportunity detail", "claim_ids": ["CLM_1"]}],
+            }), encoding="utf-8")
+            (root / "04_report_data.json").write_text(json.dumps({
+                "schema_version": "2.0", "content_blocks": [], "metrics": [], "time_series": [],
+                "comparisons": [], "segments": [], "data_gaps": [], "recommendations": [], "scenarios": [],
+            }), encoding="utf-8")
+            (root / "06_dashboard_data.json").write_text(json.dumps({
+                "schema_version": "2.0", "dashboard_status": "READY", "metrics": [], "risks": [], "opportunities": [],
+            }), encoding="utf-8")
+
+            destination = generate_dashboard_html(root, web_root=web_root)
+            html = destination.read_text(encoding="utf-8")
+
+        self.assertIn('"item_id":"R1"', html)
+        self.assertIn('"item_id":"O1"', html)
+        self.assertIn('"report_data"', html)
+
 
 if __name__ == "__main__":
     unittest.main()

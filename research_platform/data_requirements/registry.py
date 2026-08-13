@@ -3,9 +3,15 @@
 from copy import deepcopy
 
 from dashboard.analysis_types import normalize_analysis_type
+from research_platform.data_acquisition.search_vocabulary import route_industry
 
 from .business_model import REQUIREMENTS as BUSINESS_MODEL
-from .company_strategy import REQUIREMENTS as COMPANY_STRATEGY
+from .company_strategy import (
+    AVIATION_OPERATING_COMPONENTS,
+    AVIATION_OPERATING_METRICS,
+    AVIATION_OPERATING_MINIMUMS,
+    REQUIREMENTS as COMPANY_STRATEGY,
+)
 from .competitor_analysis import REQUIREMENTS as COMPETITOR_ANALYSIS
 from .generic_strategy import REQUIREMENTS as GENERIC_STRATEGY
 from .growth_strategy import REQUIREMENTS as GROWTH_STRATEGY
@@ -36,6 +42,14 @@ def get_requirement_template(analysis_type):
 def build_requirements(scope):
     normalized, template = get_requirement_template(scope.get("analysis_type"))
     datasets = [item.to_dict() for item in template]
+    if normalized == "COMPANY_STRATEGY":
+        operating = next(
+            (row for row in datasets if row["dataset_id"] == "operating_metrics"), None
+        )
+        if operating and route_industry(scope.get("industry")) == "aviation":
+            operating["required_metrics"] = list(AVIATION_OPERATING_METRICS)
+            operating["dashboard_components"] = list(AVIATION_OPERATING_COMPONENTS)
+            operating["component_minimums"] = deepcopy(AVIATION_OPERATING_MINIMUMS)
     if normalized == "GENERIC_STRATEGY":
         questions = scope.get("focus_questions") or []
         sections = scope.get("required_sections") or []
