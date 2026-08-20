@@ -53,6 +53,37 @@ def build_content_blocks(report_model: dict, claims: list[dict], recommendations
             "source_observation_ids": observation_ids,
             "recommendation_ids": list(paragraph.get("recommendation_ids") or []),
         })
+    # Structured decision items are canonical too. If the Agent omitted a
+    # matching prose paragraph, derive concise report sections so “关键风险”
+    # and “关键机会” can never become blank while the structured arrays exist.
+    for collection, section_id, section_title in (
+        ("risks", "key_risks", "关键风险"),
+        ("opportunities", "key_opportunities", "关键机会"),
+    ):
+        has_section = any(
+            section_id in str(block.get("section_id") or "").lower()
+            or section_title in str(block.get("section_title") or "")
+            for block in blocks
+        )
+        if has_section:
+            continue
+        for item in normalize_strategic_items(report_model, claims, collection):
+            claim_ids = list(item.get("claim_ids") or [])
+            linked = [claim_map[value] for value in claim_ids if value in claim_map]
+            blocks.append({
+                "block_id": f"B{len(blocks) + 1}",
+                "section_id": section_id,
+                "section_title": section_title,
+                "claim_type": "INFERENCE",
+                "text": f"{item['label']}：{item['description']}",
+                "fact_ids": list(item.get("source_fact_ids") or []),
+                "claim_ids": claim_ids,
+                "review_ids": [], "human_feedback_ids": [],
+                "source_observation_ids": list(dict.fromkeys(
+                    value for row in linked for value in row.get("observation_ids", [])
+                )),
+                "recommendation_ids": [],
+            })
     return blocks
 
 
@@ -229,7 +260,7 @@ def normalize_scenarios(scenarios):
     return normalized, errors
 
 
-def attach_fact_verification(observations, claims):
+def attach_fact_verification(observations, claims, observation_verifications=()):
     """Attach Fact verification to Observations without mutating canonical data."""
     by_observation = {}
     for claim in claims:
@@ -239,6 +270,20 @@ def attach_fact_verification(observations, claims):
             if fact_id:
                 current["fact_ids"].append(fact_id)
             current["statuses"].append(claim.get("verification_status", "NOT_CHECKED"))
+    claim_fact_ids = {
+        row.get("claim_id"): row.get("display_id") or row.get("claim_id")
+        for row in claims if row.get("claim_id")
+    }
+    for record in observation_verifications or []:
+        observation_id = record.get("observation_id")
+        if not observation_id:
+            continue
+        current = by_observation.setdefault(observation_id, {"fact_ids": [], "statuses": []})
+        current["statuses"].append(record.get("verification_status", "NOT_CHECKED"))
+        current["fact_ids"].extend(
+            claim_fact_ids[claim_id]
+            for claim_id in record.get("claim_ids", []) if claim_id in claim_fact_ids
+        )
     rank = {"UNSUPPORTED": 4, "NOT_CHECKED": 3, "PARTIAL": 2, "SUPPORTED": 1}
     rows = []
     for raw in observations or []:
@@ -251,8 +296,8 @@ def attach_fact_verification(observations, claims):
     return rows
 
 
-def _structured_views(observations, claims, sufficiency):
-    verified = attach_fact_verification(observations, claims)
+def _structured_views(observations, claims, sufficiency, observation_verifications=()):
+    verified = attach_fact_verification(observations, claims, observation_verifications)
     enriched = enrich_report_data(
         {
             "kpis": [], "time_series": [], "market_segments": [],
@@ -271,17 +316,74 @@ def _structured_views(observations, claims, sufficiency):
     }
 
 
+def _recommendation_roadmap(recommendations, claims):
+    claim_map = {row.get("claim_id"): row for row in claims if row.get("claim_id")}
+    roadmap = []
+    for index, row in enumerate(recommendations or [], 1):
+        fact_ids = list(row.get("source_fact_ids") or [])
+        for claim_id in row.get("claim_ids") or []:
+            claim = claim_map.get(claim_id, {})
+            fact_id = claim.get("display_id") or claim.get("claim_id")
+            if fact_id and fact_id not in fact_ids:
+                fact_ids.append(fact_id)
+        roadmap.append({
+            "item_id": row.get("recommendation_id") or row.get("item_id") or f"ROADMAP_{index:03d}",
+            "label": row.get("title") or row.get("label") or f"行动 {index}",
+            "description": row.get("rationale") or row.get("description") or "",
+            "start": row.get("start") or None,
+            "end": row.get("end") or row.get("time_horizon") or None,
+            "status": row.get("status") or "PLANNED",
+            "owner": row.get("responsible_function") or row.get("owner"),
+            "source_fact_ids": fact_ids,
+        })
+    return roadmap
+
+
+def _visual_availability(payload, sufficiency):
+    coverage = list((sufficiency or {}).get("datasets") or [])
+    observed = sum(int(row.get("observation_count") or 0) for row in coverage)
+    gap_ids = [
+        gap.get("gap_id") for row in coverage if row.get("status") != "PASS"
+        for gap in row.get("gaps") or [] if gap.get("gap_id")
+    ]
+    labels = {
+        "metrics": "核心指标", "time_series": "趋势图", "comparisons": "竞品比较",
+        "segments": "构成分析", "matrices": "矩阵分析", "geographies": "地理分布",
+        "risks": "关键风险", "opportunities": "关键机会",
+        "recommendations": "战略建议", "roadmap": "执行路线图", "scenarios": "情景分析",
+    }
+    result = {}
+    for collection, label in labels.items():
+        exported = len(payload.get(collection) or [])
+        if exported:
+            status, code = "AVAILABLE", "STRUCTURED_DATA_AVAILABLE"
+            reason = f"{label}已有 {exported} 组可追溯结构化数据。"
+            action = "查看图表并结合证据编号解读。"
+        elif observed:
+            status, code = "PARTIAL", "INSUFFICIENT_VISUAL_DIMENSIONS"
+            reason = f"已采集 {observed} 条Observation，但尚不满足{label}所需的数值、口径、期间或核验维度。"
+            action = "按Data Coverage缺口定向补搜，或在当前版本保留文字化证据说明。"
+        else:
+            status, code = "UNAVAILABLE", "NO_VERIFIED_OBSERVATIONS"
+            reason = f"当前没有可用于{label}的已核验证据。"
+            action = "先完成对应数据集的定向采集与Fact Check。"
+        result[collection] = {
+            "status": status, "reason_code": code, "reason": reason,
+            "observed_count": observed, "exported_count": exported,
+            "gap_ids": gap_ids, "search_stop_reason": (sufficiency or {}).get("search_stop_reason") or "",
+            "required_action": action,
+        }
+    return result
+
+
 def report_data_payload(
     report_model, claims, recommendations, final_markdown, *, run_id, revision_id,
-    observations=(), sufficiency=None,
+    observations=(), sufficiency=None, observation_verifications=(),
 ):
     blocks = build_content_blocks(report_model, claims, recommendations)
     scenarios, scenario_errors = normalize_scenarios(report_model.get("scenarios", []))
-    views = _structured_views(observations, claims, sufficiency) if observations else {
-        "metrics": [], "time_series": [], "comparisons": [], "segments": [],
-        "data_gaps": [], "meta": {},
-    }
-    return {
+    views = _structured_views(observations, claims, sufficiency, observation_verifications)
+    payload = {
         "schema_version": "2.0",
         "meta": {"run_id": run_id, "revision_id": revision_id, "final_report_sha256": sha256_text(final_markdown)},
         "content_blocks": blocks,
@@ -293,6 +395,8 @@ def report_data_payload(
         "risks": normalize_strategic_items(report_model, claims, "risks"),
         "opportunities": normalize_strategic_items(report_model, claims, "opportunities"),
         "recommendations": list(recommendations),
+        "roadmap": _recommendation_roadmap(recommendations, claims),
+        "matrices": [], "geographies": [],
         "scenarios": scenarios,
         "validation_errors": scenario_errors,
         "_meta": {
@@ -300,6 +404,8 @@ def report_data_payload(
             "observation_ids": [row.get("observation_id") for row in observations if row.get("observation_id")],
         },
     }
+    payload["visual_availability"] = _visual_availability(payload, sufficiency)
+    return payload
 
 
 def hash_consistent(final_markdown: str, report_data: dict) -> bool:

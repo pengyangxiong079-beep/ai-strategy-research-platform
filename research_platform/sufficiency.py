@@ -4,6 +4,8 @@ from collections import Counter, defaultdict
 import re
 
 from .data_acquisition.search_vocabulary import build_dataset_queries
+from .normalization import canonicalize_entity
+from .search import COMPARISON_DATASETS, comparison_cohort
 
 
 COMPARABILITY_DATASETS = {
@@ -103,11 +105,19 @@ def evaluate_sufficiency(requirements, observations, sources, scope, *, gap_roun
     source_by_id = {item.get("source_id"): item for item in sources}
     datasets = []
     critical_gaps = []
-    topic_entity = re.split(r"在|进入|公司战略|的竞品|行业分析", str(scope.get("topic", "")), maxsplit=1)[0].strip()
-    target_entities = [scope.get("target_entity") or topic_entity, *(scope.get("competitors") or [])]
-    target_entities = [item for item in dict.fromkeys(target_entities) if item]
     for req in requirements.get("datasets", []):
-        rows = [row for row in observations if row.get("dataset_id") == req["dataset_id"] and _valid_row(row, source_by_id)]
+        expected_entities = (
+            comparison_cohort(scope, req.get("minimum_entities", 1))
+            if req["dataset_id"] in COMPARISON_DATASETS else []
+        )
+        rows = []
+        for raw in observations:
+            if raw.get("dataset_id") != req["dataset_id"] or not _valid_row(raw, source_by_id):
+                continue
+            row = dict(raw)
+            if expected_entities:
+                row["entity"] = canonicalize_entity(row.get("entity"), expected_entities)
+            rows.append(row)
         entities = sorted({row.get("entity") for row in rows if _filled(row.get("entity"))})
         periods = sorted({row.get("period") for row in rows if _filled(row.get("period"))})
         fields = list(dict.fromkeys([*(req.get("required_fields") or []), *(req.get("required_comparability_fields") or [])]))
@@ -116,6 +126,11 @@ def evaluate_sufficiency(requirements, observations, sources, scope, *, gap_roun
         counts = Counter(row.get("entity") for row in rows if _filled(row.get("entity")))
         entity_requirement_met = len(entities) >= req.get("minimum_entities", 0)
         per_entity_met = bool(entities) and sum(count >= req.get("minimum_observations_per_entity", 0) for count in counts.values()) >= req.get("minimum_entities", 0)
+        missing_expected_entities = [
+            entity for entity in expected_entities
+            if counts.get(entity, 0) < req.get("minimum_observations_per_entity", 1)
+        ]
+        cohort_requirement_met = not expected_entities or not missing_expected_entities
         minimum_periods = req.get("minimum_periods", 0)
         periods_met = (
             _series_period_count(rows) >= minimum_periods
@@ -125,7 +140,7 @@ def evaluate_sufficiency(requirements, observations, sources, scope, *, gap_roun
         present_metrics = {str(row.get("metric_id") or row.get("metric") or "") for row in rows}
         missing_metrics = [metric for metric in req.get("required_metrics") or [] if metric not in present_metrics]
         metrics_met = not missing_metrics
-        if entity_requirement_met and per_entity_met and periods_met and fields_met and metrics_met:
+        if entity_requirement_met and per_entity_met and cohort_requirement_met and periods_met and fields_met and metrics_met:
             status = "PASS"
         elif rows:
             status = "PARTIAL"
@@ -146,10 +161,7 @@ def evaluate_sufficiency(requirements, observations, sources, scope, *, gap_roun
                 ready = ready and comparability_rate is not None and comparability_rate >= threshold["comparability_rate"]
             readiness[component] = bool(ready)
         gaps = []
-        missing_target_entities = []
-        if req.get("priority") == "CRITICAL" and target_entities and req["dataset_id"] in {"competitor_profiles", "product_portfolios", "price_observations", "positioning", "channel_or_store_coverage"}:
-            missing_target_entities = [entity for entity in target_entities if counts.get(entity, 0) < req.get("minimum_observations_per_entity", 1)]
-        for entity in missing_target_entities:
+        for entity in missing_expected_entities:
             needed = max(0, req.get("minimum_observations_per_entity", 1) - counts.get(entity, 0))
             gaps.append({"gap_id": f"G_{req['dataset_id']}_{len(gaps)+1:03d}", "entity": entity, "missing_field": "observation", "needed_observations": needed, "recommended_queries": _recommended_queries(req["dataset_id"], entity, "observation", scope)})
         for field in req.get("required_fields") or []:
@@ -159,12 +171,14 @@ def evaluate_sufficiency(requirements, observations, sources, scope, *, gap_roun
         for metric_id in missing_metrics:
             gaps.append({"gap_id": f"G_{req['dataset_id']}_{len(gaps)+1:03d}", "entity": "", "missing_field": "metric", "missing_metric": metric_id, "needed_observations": 1, "recommended_queries": _recommended_queries(req["dataset_id"], "", metric_id, scope)})
         if not rows:
-            gaps.append({"gap_id": f"G_{req['dataset_id']}_001", "entity": "", "missing_field": "dataset", "needed_observations": req.get("minimum_entities", 1) * req.get("minimum_observations_per_entity", 1), "recommended_queries": _recommended_queries(req["dataset_id"], "", "data", scope)})
+            gaps.append({"gap_id": f"G_{req['dataset_id']}_{len(gaps)+1:03d}", "entity": "", "missing_field": "dataset", "needed_observations": req.get("minimum_entities", 1) * req.get("minimum_observations_per_entity", 1), "recommended_queries": _recommended_queries(req["dataset_id"], "", "data", scope)})
         grade_distribution = Counter(source_by_id.get(row.get("source_id"), {}).get("source_grade", row.get("source_grade", "UNKNOWN")) for row in rows)
         item = {
             "dataset_id": req["dataset_id"], "priority": req["priority"], "status": status,
             "entity_count": len(entities), "entities": entities, "observation_count": len(rows),
             "periods": periods, "required_entity_count": req.get("minimum_entities", 0),
+            "expected_entities": expected_entities,
+            "missing_entities": missing_expected_entities,
             "required_observations_per_entity": req.get("minimum_observations_per_entity", 0),
             "field_completeness": {key: round(value, 3) for key, value in completeness.items()},
             "comparability_rate": round(comparability_rate, 3) if comparability_rate is not None else None,
@@ -206,12 +220,13 @@ def build_gap_search_plan(sufficiency, search_plan, *, include_optional=False):
         for raw_query in gap.get("recommended_queries") or []:
             query_spec = dict(raw_query) if isinstance(raw_query, dict) else {"query": str(raw_query), "query_text": str(raw_query)}
             query = query_spec.get("query_text") or query_spec.get("query") or ""
-            if not query or query in seen:
+            identity = query.strip().lower()
+            if not query or identity in seen:
                 continue
-            seen.add(query)
+            seen.add(identity)
             queries.append({
                 **query_spec,
-                "query_id": query_spec.get("query_id") or f"GQ_{len(queries) + 1:03d}",
+                "query_id": f"GQ_{len(queries) + 1:03d}",
                 "gap_id": gap.get("gap_id") or query_spec.get("gap_id") or "",
                 "dataset_id": gap.get("dataset_id") or query_spec.get("dataset_id") or "",
                 "priority": gap.get("priority", "CRITICAL"),

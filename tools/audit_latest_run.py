@@ -22,8 +22,8 @@ from pipeline_v2.review import validate_review_notes
 
 EXIT_PASS, EXIT_WARN, EXIT_FAIL, EXIT_INCOMPLETE, EXIT_TOOL_ERROR = range(5)
 REQUIRED_RUN_FILES = (
-    "00_analysis_scope.json", "01_research_brief.md", "03_fact_check.json",
-    "04_final_report.md", "04_report_data.json", "05_quality_check.json",
+    "00_analysis_scope.json", "03_fact_check.json",
+    "04_final_report.md", "04_report_data.json",
     "06_dashboard_data.json", "run_manifest.json",
 )
 FACT_TAG = re.compile(r"【\s*事实(?:\s*[｜|]\s*F\d+)?\s*】")
@@ -47,6 +47,10 @@ def _timestamp(manifest):
 
 def _complete(folder: Path):
     missing = [name for name in REQUIRED_RUN_FILES if not (folder / name).is_file()]
+    if not ((folder / "01_research_brief.md").is_file() or (folder / "research/research_model.json").is_file()):
+        missing.append("01_research_brief.md|research/research_model.json")
+    if not ((folder / "05_quality_check.json").is_file() or (folder / "quality/summary.json").is_file()):
+        missing.append("05_quality_check.json|quality/summary.json")
     if not ((folder / "02_review_notes.json").is_file() or (folder / "02_review_notes.md").is_file()):
         missing.append("02_review_notes.json|md")
     return not missing, missing
@@ -69,8 +73,28 @@ def discover_runs(outputs_root: Path):
         manifest = _json(manifest_path, {})
         if not manifest:
             continue
-        complete, missing = _complete(manifest_path.parent)
-        rows.append({"folder": manifest_path.parent, "manifest": manifest, "timestamp": _timestamp(manifest), "complete": complete, "missing": missing})
+        folder = manifest_path.parent
+        complete_folder = folder
+        complete, missing = _complete(folder)
+        state = _json(folder / "run_state.json", {})
+        revision_id = (
+            manifest.get("latest_revision") or manifest.get("active_revision_id")
+            or state.get("active_revision_id")
+        )
+        revision = folder / "revisions" / str(revision_id) if revision_id else None
+        if not complete and revision and revision.is_dir():
+            revision_complete, revision_missing = _complete(revision)
+            revision_state = _json(revision / "run_state.json", {})
+            revision_manifest = _json(revision / "revision_manifest.json", {})
+            revision_finished = (
+                revision_state.get("overall_status") == "COMPLETED"
+                or revision_manifest.get("status") == "COMPLETED"
+            )
+            if revision_complete and revision_finished:
+                complete, missing, complete_folder = True, [], revision
+            else:
+                missing = revision_missing
+        rows.append({"folder": folder, "complete_folder": complete_folder, "manifest": manifest, "timestamp": _timestamp(manifest), "complete": complete, "missing": missing})
     return sorted(rows, key=lambda row: (row["timestamp"], str(row["folder"])), reverse=True)
 
 
@@ -96,7 +120,11 @@ def select_revision(run_folder: Path, manifest: dict, requested="latest"):
     revisions = run_folder / "revisions"
     if requested in {None, "current"}:
         return "current", run_folder
-    revision_id = manifest.get("latest_revision") if requested == "latest" else requested
+    state = _json(run_folder / "run_state.json", {})
+    revision_id = (
+        manifest.get("latest_revision") or manifest.get("active_revision_id")
+        or state.get("active_revision_id")
+    ) if requested == "latest" else requested
     if revision_id and (revisions / revision_id).is_dir():
         return revision_id, revisions / revision_id
     return "current", run_folder
@@ -160,6 +188,7 @@ def audit_run(run_row, revision_id, source_folder: Path, incomplete_latest=None)
     coverage = _json(source_folder / "data/data_coverage.json", _json(root / "data/data_coverage.json", _json(root / "data/sufficiency.json", {})))
     search_log = _json(source_folder / "data/search_log.json", _json(root / "data/search_log.json", {"entries": []}))
     gap_plan = _json(source_folder / "data/gap_search_plan.json", _json(root / "data/gap_search_plan.json", {"queries": []}))
+    targeted_gap = _json(source_folder / "data/targeted_gap_search.json", {})
     issues = []
     run_state = _json(source_folder / "run_state.json", _json(root / "run_state.json", {}))
 
@@ -246,7 +275,54 @@ def audit_run(run_row, revision_id, source_folder: Path, incomplete_latest=None)
     rounds = int(coverage.get("gap_search_rounds_completed", 0) or 0)
     executed = [row for row in search_log.get("entries", []) if row.get("execution_status") == "COMPLETED" or (row.get("executed_at") and row.get("result_count") is not None)]
     valid_executed = [row for row in executed if row.get("executed_at") and row.get("result_count") is not None and row.get("opened_sources")]
-    if rounds > len(valid_executed):
+    # Pipeline V2 records targeted live searches as an immutable revision
+    # marker plus before/after canonical evidence, rather than the legacy
+    # search_log. Accept that protocol only when it proves the query intent,
+    # successful source/Observation additions, and resolved target coverage.
+    targeted_queries = list((targeted_gap.get("repair_context") or {}).get("queries") or [])
+    if not targeted_queries:
+        targeted_queries = [
+            query
+            for target in targeted_gap.get("targets") or [] if isinstance(target, dict)
+            for query in target.get("recommended_queries") or []
+            if (query.get("query_text") or query.get("query")) if isinstance(query, dict)
+        ]
+    base_observations = _json(root / "data/observations.json", {"observations": []}).get("observations", [])
+    base_sources = _json(root / "data/sources.json", _json(root / "data/source_registry.json", {"sources": []})).get("sources", [])
+    target_ids = set(targeted_gap.get("target_dataset_ids") or [])
+    resolved_ids = set(targeted_gap.get("resolved_dataset_ids") or [])
+    remaining_ids = set(targeted_gap.get("remaining_dataset_ids") or [])
+    successful_new_sources = {
+        row.get("source_id") for row in sources
+        if row.get("source_id")
+        and row.get("source_id") not in {item.get("source_id") for item in base_sources}
+        and row.get("access_status") == "SUCCESS"
+    }
+    new_target_observations = [
+        row for row in observations
+        if row.get("observation_id") not in {item.get("observation_id") for item in base_observations}
+        and row.get("dataset_id") in target_ids
+        and row.get("source_id") in successful_new_sources
+    ]
+    v2_targeted_evidence = (
+        targeted_gap.get("status") == "COMPLETED"
+        and bool(targeted_queries)
+        and bool(target_ids)
+        and target_ids == (resolved_ids | remaining_ids)
+        and not (resolved_ids & remaining_ids)
+        and bool(new_target_observations)
+        and all(
+            row.get("status") == "PASS"
+            for row in coverage.get("datasets", [])
+            if row.get("dataset_id") in resolved_ids
+        )
+        and all(
+            row.get("status") != "PASS"
+            for row in coverage.get("datasets", [])
+            if row.get("dataset_id") in remaining_ids
+        )
+    )
+    if rounds > len(valid_executed) and not v2_targeted_evidence:
         issues.append(_issue("GAP_SEARCH_FALSE_COMPLETION", "Gap Search is marked completed without query execution and opened source logs", "data/search_log.json", priority="P1", pointer="/entries"))
     for index, query in enumerate(gap_plan.get("queries", [])):
         text = str(query.get("query_text") or query.get("query") or "")

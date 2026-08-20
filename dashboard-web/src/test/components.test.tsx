@@ -6,8 +6,9 @@ import { metric } from "./fixtures";
 import { DataCoverageChart, EntityEvidenceChart } from "../components/EvidenceCoverageCharts";
 import { DecisionBrief } from "../components/DecisionBrief";
 import { ScenarioChart } from "../components/StrategicWidgets";
+import { WidgetRenderer } from "../components/WidgetRenderer";
 import { toDashboardView } from "../lib/validation";
-import { bundle } from "./fixtures";
+import { bundle, catalog } from "./fixtures";
 
 vi.mock("../components/EChart", () => ({ EChart: ({ ariaLabel }: { ariaLabel: string }) => <div role="img" aria-label={ariaLabel} /> }));
 
@@ -64,5 +65,22 @@ describe("responsive components", () => {
     expect(screen.getByText("审慎情景")).toBeInTheDocument();
     expect(screen.getByText("战略影响").parentElement).toHaveTextContent("暂停未经验证的扩张");
     expect(screen.getByText("应对行动").parentElement).toHaveTextContent("优先补全证据");
+  });
+
+  it("uses canonical availability to explain an empty required widget", () => {
+    const fixture = bundle();
+    fixture.dashboard.component_availability = {
+      matrices: {
+        status: "PARTIAL", reason: "已有证据，但缺少统一的二维评分口径。",
+        required_action: "补充同期间、同口径的两个维度。",
+      },
+    };
+    const view = toDashboardView(fixture.dashboard)!;
+    render(<WidgetRenderer
+      spec={{ id: "portfolio", component: "PortfolioMatrix", title: "业务组合", dataset: "matrices", priority: 1, required: true }}
+      view={view} locale="zh" catalog={catalog()} current={fixture}
+    />);
+    expect(screen.getByText("业务组合暂不可用")).toBeInTheDocument();
+    expect(screen.getByText(/补充同期间、同口径的两个维度/)).toBeInTheDocument();
   });
 });

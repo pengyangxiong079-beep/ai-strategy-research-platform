@@ -47,6 +47,15 @@ def data_gate(payload, context):
                 actual={"status": dataset.get("status"), "observation_count": dataset.get("observation_count", 0), "gaps": gaps},
                 repair_type="UPSTREAM_DATA_REQUIRED",
             ))
+        elif dataset.get("priority") == "IMPORTANT" and dataset.get("status") != "PASS":
+            warnings.append(issue(
+                "DATA_IMPORTANT_INSUFFICIENT",
+                "IMPORTANT dataset is incomplete; downstream report and dashboard must disclose the gap",
+                stage="data", artifact="data/data_coverage.json",
+                entity_id=dataset.get("dataset_id", ""),
+                actual={"status": dataset.get("status"), "gaps": dataset.get("gaps") or []},
+                repair_type="UPSTREAM_DATA_REQUIRED", severity="WARNING",
+            ))
         elif dataset.get("priority") == "OPTIONAL" and dataset.get("status") != "PASS":
             warnings.append(issue("DATA_OPTIONAL_INSUFFICIENT", "OPTIONAL dataset is insufficient and does not block the pipeline", stage="data", artifact="data/data_coverage.json", entity_id=dataset.get("dataset_id", ""), repair_type="HUMAN_REQUIRED", severity="WARNING"))
     return result(errors, warnings)
@@ -64,6 +73,27 @@ def research_gate(payload, context):
                 errors.append(issue("RESEARCH_FACT_OBSERVATION", "Claim references a missing Observation", stage="research", artifact="research/claims.json", location=f"/claims/{index}/observation_ids", entity_id=claim.get("claim_id", "")))
         if claim.get("atomicity_status") != "ATOMIC":
             errors.append(issue("RESEARCH_ATOMICITY", "Claim must be atomic", stage="research", artifact="research/claims.json", entity_id=claim.get("claim_id", ""), repair_type="STAGE_RETRY"))
+    required_dataset_ids = set(context.get("required_dataset_ids") or [])
+    if required_dataset_ids:
+        required_observations = {
+            row.get("observation_id") for row in context.get("observations", [])
+            if row.get("dataset_id") in required_dataset_ids and row.get("observation_id")
+        }
+        covered_observations = {
+            observation_id for claim in payload.get("claims", [])
+            for observation_id in claim.get("observation_ids", [])
+        }
+        missing = sorted(required_observations - covered_observations)
+        if missing:
+            errors.append(issue(
+                "RESEARCH_OBSERVATION_COVERAGE",
+                "Every CRITICAL/IMPORTANT Observation must support at least one atomic Claim",
+                stage="research", artifact="research/claims.json",
+                location="/claims", expected=sorted(required_observations), actual={
+                    "covered_count": len(required_observations & covered_observations),
+                    "missing_observation_ids": missing,
+                }, repair_type="STAGE_RETRY",
+            ))
     return result(errors)
 
 

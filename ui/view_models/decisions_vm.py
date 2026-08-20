@@ -12,7 +12,7 @@ DECISION_OPTIONS = [
 ]
 
 
-def _decision_from_review(run_id, item):
+def _decision_from_review(run_id, item, sufficiency=None):
     issue = item.get("issue") or item.get("reason") or "未提供问题说明"
     required_action = (
         item.get("required_action")
@@ -23,7 +23,7 @@ def _decision_from_review(run_id, item):
     claim_ids = list(item.get("claim_ids") or [])
     if item.get("claim_id") and item["claim_id"] not in claim_ids:
         claim_ids.append(item["claim_id"])
-    return {
+    decision = {
         "decision_id": stable_id("decision", run_id, item.get("review_id")),
         "review_id": item.get("review_id"),
         "source_stage": "review",
@@ -39,11 +39,39 @@ def _decision_from_review(run_id, item):
         "agent_suggestion": required_action,
         "options": DECISION_OPTIONS,
     }
+    if item.get("category") == "sufficiency":
+        text = " ".join(str(item.get(key) or "") for key in ("issue", "evidence", "required_action"))
+        matching = []
+        for dataset in (sufficiency or {}).get("datasets", []):
+            if not isinstance(dataset, dict):
+                continue
+            dataset_id = str(dataset.get("dataset_id") or "")
+            for gap in dataset.get("gaps") or []:
+                if not isinstance(gap, dict):
+                    continue
+                gap_id = str(gap.get("gap_id") or "")
+                if (gap_id and gap_id in text) or (dataset_id and dataset_id in text):
+                    matching.append({**gap, "dataset_id": dataset_id, "priority": dataset.get("priority")})
+        if matching:
+            queries = []
+            for gap in matching:
+                for raw in gap.get("recommended_queries") or []:
+                    query = (raw.get("query_text") or raw.get("query")) if isinstance(raw, dict) else str(raw)
+                    if query and query not in queries:
+                        queries.append(query)
+            datasets = ", ".join(dict.fromkeys(gap["dataset_id"] for gap in matching))
+            decision["evidence"] = f"{decision['evidence']}\n\n具体缺口数据集：{datasets}。"
+            if queries:
+                query_text = "；".join(queries)
+                decision["required_action"] = f"{decision['required_action']}\n\n建议定向查询：{query_text}"
+            decision["gap_details"] = matching
+    return decision
 
 
 def decisions_view_model(run):
     folder = Path(run["folder"])
     review = read_json(folder / "review/review_issues.json", {"issues": []})
+    sufficiency = read_json(folder / "data/sufficiency.json", {"datasets": []})
     feedback = read_json(folder / "human/feedback.json", {"feedback": []})
     resolved_ids = {
         row.get("decision_id")
@@ -57,7 +85,7 @@ def decisions_view_model(run):
     }
     pending = []
     for item in review.get("issues", []):
-        decision = _decision_from_review(run.get("run_id"), item)
+        decision = _decision_from_review(run.get("run_id"), item, sufficiency)
         if (
             decision["decision_id"] not in resolved_ids
             and decision["decision_id"] not in deferred_ids

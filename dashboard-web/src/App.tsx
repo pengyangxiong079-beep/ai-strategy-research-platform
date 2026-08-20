@@ -97,7 +97,7 @@ function App() {
     const visibleWidgets = currentPage.widgets
       .filter((spec) => !spec.showWhen || spec.showWhen.every((condition) => conditionMatches(condition, view)))
       .sort((left, right) => left.priority - right.priority)
-      .filter((spec) => spec.required || hasDataset(view, spec.dataset));
+      .filter((spec) => spec.required || hasDataset(view, spec.dataset) || Boolean(view.visual_availability[spec.dataset]));
     return (
       <>
         <section className="page-purpose"><strong>{currentPage.label}</strong><p>{currentPage.purpose}</p></section>

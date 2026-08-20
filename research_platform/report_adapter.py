@@ -65,6 +65,14 @@ def _metric_payload(row):
         "source_observation_ids": [row.get("observation_id")] if row.get("observation_id") else [],
         "source_grade": GRADE_MAP.get(row.get("source_grade"), "N/A"),
         "confidence": confidence,
+        # Preserve visualization-native dimensions when the source
+        # Observation explicitly provides them; never infer coordinates or
+        # decomposition semantics from prose.
+        "is_delta": row.get("is_delta"),
+        "latitude": row.get("latitude"), "longitude": row.get("longitude"),
+        "x": row.get("x"), "y": row.get("y"), "size": row.get("size"),
+        "methodology": row.get("methodology"),
+        "start": row.get("start"), "end": row.get("end"),
     }
 
 
@@ -223,7 +231,13 @@ def enrich_report_data(report_data, observations, sufficiency):
     groups = defaultdict(list)
     for row in usable:
         if row.get("value") is not None:
-            groups[(row.get("dataset_id"), row.get("metric"), row.get("comparability_group"))].append(row)
+            strict_group = (
+                row.get("comparability_group"), row.get("metric_id") or row.get("metric"),
+                row.get("metric_definition"), row.get("unit"), row.get("currency"),
+                row.get("geography"), row.get("period"), row.get("period_type"),
+                row.get("entity_scope"), row.get("channel"), row.get("price_type"),
+            )
+            groups[(row.get("dataset_id"), row.get("metric"), strict_group)].append(row)
     existing_comparisons = {item.get("comparison_id") for item in report_data.get("competitor_comparisons", [])}
     for (dataset_id, metric, group), rows in groups.items():
         by_entity = defaultdict(list)

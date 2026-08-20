@@ -112,6 +112,7 @@ export interface DashboardView {
   excluded: Array<Record<string, unknown>>;
   observations: Observation[];
   data_coverage: DataCoverage;
+  visual_availability: NonNullable<DashboardData["component_availability"]>;
 }
 
 export function toDashboardView(dashboard: DashboardData): DashboardView | null {
@@ -145,6 +146,7 @@ export function toDashboardView(dashboard: DashboardData): DashboardView | null 
     excluded,
     observations: (dashboard.observations ?? []).filter((item) => ["SUPPORTED", "PARTIAL", "VERIFIED"].includes(String(item.verification_status).toUpperCase()) && item.temporal_status !== "SUPERSEDED"),
     data_coverage: dashboard.data_coverage ?? {},
+    visual_availability: dashboard.component_availability ?? {},
   };
 }
 

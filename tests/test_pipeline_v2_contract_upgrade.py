@@ -116,6 +116,43 @@ def test_critical_data_gap_has_actionable_dataset_diagnostics():
     assert "second comparable fiscal period" in issue["reason"]
 
 
+def test_research_gate_requires_critical_and_important_observation_coverage():
+    observations = [
+        {"observation_id": "O_CRIT", "dataset_id": "prices"},
+        {"observation_id": "O_IMP", "dataset_id": "features"},
+        {"observation_id": "O_OPT", "dataset_id": "reviews"},
+    ]
+    gate = validate_stage("research", {"claims": [{
+        "claim_id": "C1", "claim_type": "FACT", "atomicity_status": "ATOMIC",
+        "source_ids": ["S1"], "observation_ids": ["O_CRIT"],
+    }]}, {
+        "observations": observations, "sources": [{"source_id": "S1"}],
+        "required_dataset_ids": ["prices", "features"],
+    })
+    issue = next(row for row in gate.errors if row["rule_id"] == "RESEARCH_OBSERVATION_COVERAGE")
+    assert issue["actual"]["missing_observation_ids"] == ["O_IMP"]
+    assert "O_OPT" not in issue["expected"]
+
+
+def test_fact_check_reconciles_obsolete_review_verification_items(tmp_path):
+    review = {"schema_version": "2.0", "issues": [
+        {"review_id": "R1", "category": "verification", "issue": "O101尚未核验", "required_action": "核验O101", "status": "OPEN"},
+        {"review_id": "R2", "category": "verification", "issue": "O102尚未核验", "required_action": "核验O102", "status": "OPEN"},
+        {"review_id": "R3", "category": "sufficiency", "issue": "价格数量不足", "required_action": "补搜", "status": "OPEN"},
+    ]}
+    (tmp_path / "02_review_notes.json").write_text(json.dumps(review, ensure_ascii=False), encoding="utf-8")
+    resolved = PipelineV2Orchestrator._reconcile_review_after_fact_check(tmp_path, {
+        "observation_verifications": [
+            {"observation_id": "O101", "verification_status": "SUPPORTED"},
+            {"observation_id": "O102", "verification_status": "UNSUPPORTED"},
+        ],
+    })
+    result = json.loads((tmp_path / "02_review_notes.json").read_text(encoding="utf-8"))["issues"]
+    assert resolved == 1
+    assert result[0]["status"] == "RESOLVED"
+    assert result[1]["status"] == result[2]["status"] == "OPEN"
+
+
 def test_structured_scenarios_fact_tags_and_hash_are_deterministic():
     scenario = {
         "scenario_id": "SC_BASE", "label": "基准情景", "base_period": "2025", "end_period": "2030",
@@ -136,6 +173,75 @@ def test_structured_scenarios_fact_tags_and_hash_are_deterministic():
     assert payload["scenarios"][0]["target_value"] == 215
     assert hash_consistent(markdown, payload)
     assert not hash_consistent(markdown + "changed", payload)
+
+
+def test_structured_risks_and_opportunities_are_rendered_when_paragraphs_omit_them():
+    claims = [{"claim_id": "C1", "display_id": "F1", "observation_ids": ["O1"]}]
+    model = {
+        "title": "决策报告",
+        "paragraphs": [{"section_id": "overview", "section_title": "结论", "label": "INFERENCE", "text": "先验证再扩张。", "claim_ids": ["C1"]}],
+        "risks": [{"label": "实施风险", "description": "集成周期可能延长。", "claim_ids": ["C1"]}],
+        "opportunities": [{"label": "客户机会", "description": "现有客户存在交叉销售空间。", "claim_ids": ["C1"]}],
+    }
+    payload = report_data_payload(model, claims, [], "", run_id="r", revision_id="rev_000")
+    markdown = render_content_blocks(model["title"], payload["content_blocks"])
+    assert "## 关键风险" in markdown and "实施风险" in markdown
+    assert "## 关键机会" in markdown and "客户机会" in markdown
+
+
+def test_zero_observation_report_keeps_gaps_and_explicit_visual_availability():
+    sufficiency = {"search_stop_reason": "budget reached", "datasets": [{
+        "dataset_id": "market_size", "priority": "CRITICAL", "status": "INSUFFICIENT",
+        "observation_count": 0, "comparability_rate": None,
+        "gaps": [{"gap_id": "G_market_001", "missing_field": "dataset"}],
+    }]}
+    payload = report_data_payload(
+        {"title": "空数据报告", "paragraphs": []}, [], [], "",
+        run_id="r", revision_id="rev_000", observations=[], sufficiency=sufficiency,
+    )
+    assert payload["data_gaps"][0]["gap_id"] == "DATA_market_size"
+    assert payload["visual_availability"]["metrics"]["status"] == "UNAVAILABLE"
+    assert payload["visual_availability"]["metrics"]["required_action"]
+
+
+def test_comparison_projection_never_merges_different_periods_even_with_same_group():
+    observations = []
+    for entity, period, value in (("Alpha", "2024", 10), ("Beta", "2025", 12)):
+        observations.append({
+            "observation_id": f"O_{entity}", "dataset_id": "price_observations",
+            "entity": entity, "metric": "price", "metric_id": "price",
+            "metric_definition": "list price", "value": value, "unit": "month",
+            "currency": "USD", "geography": "global", "period": period,
+            "period_type": "CALENDAR_YEAR", "entity_scope": "PRODUCT",
+            "channel": "official", "price_type": "list", "comparability_group": "CG_BAD",
+            "verification_status": "SUPPORTED", "source_fact_ids": ["F1"],
+            "source_grade": "GRADE_A", "confidence": "HIGH", "value_type": "ACTUAL",
+        })
+    result = enrich_report_data({"competitor_comparisons": []}, observations, {"datasets": []})
+    assert result["competitor_comparisons"] == []
+
+
+def test_live_data_artifacts_cannot_weaken_planned_requirements_or_self_declare_pass(tmp_path):
+    scope = {
+        "analysis_type": "竞品分析", "analysis_type_id": "COMPETITOR_ANALYSIS",
+        "topic": "Alpha竞品分析", "target_entity": "Alpha", "competitors": ["Beta", "Gamma"],
+        "industry": "software", "geography": "全球", "analysis_date": "2026-08-20",
+        "depth": "深度版", "required_sections": ["overview"],
+    }
+    folder = tmp_path / "live_data"; folder.mkdir()
+    (folder / "00_analysis_scope.json").write_text(json.dumps(scope, ensure_ascii=False), encoding="utf-8")
+    inputs = PipelineV2Orchestrator._stage_inputs(folder, "data")
+    assert inputs["data/planned_requirements.json"]["analysis_type"] == "COMPETITOR_ANALYSIS"
+    assert inputs["data/search_plan.json"]["coverage_targets"]
+    artifacts = {
+        "requirements": {"schema_version": "1.0", "analysis_type": "COMPETITOR_ANALYSIS", "datasets": []},
+        "source_registry": {"schema_version": "1.0", "sources": []},
+        "observations": {"schema_version": "1.0", "observations": []},
+        "sufficiency": {"schema_version": "1.0", "overall_status": "PASS", "observation_count": 0, "datasets": []},
+    }
+    PipelineV2Orchestrator._normalize_data_artifacts(folder, artifacts)
+    assert artifacts["requirements"]["datasets"]
+    assert artifacts["sufficiency"]["overall_status"] == "INSUFFICIENT"
 
 
 def test_scenario_narrative_without_structured_scenarios_fails():
@@ -245,6 +351,8 @@ def test_offline_solar_fixture_completes_initial_fact_and_full_revisions(tmp_pat
     assert state["stages"]["quality"]["validation_status"] == "PASS"
     assert state["stages"]["dashboard"]["status"] == "COMPLETE"
     assert (folder / "06_dashboard_data.json").is_file()
+    dashboard = json.loads((folder / "06_dashboard_data.json").read_text(encoding="utf-8"))
+    assert all(not row.get("reason") for row in dashboard["components"] if row.get("status") == "READY")
 
     executor = RevisionExecutor(orchestrator)
     fact_plan = plan_revision(folder, "FACT_VERIFICATION")

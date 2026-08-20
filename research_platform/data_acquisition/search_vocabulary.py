@@ -76,6 +76,54 @@ GENERIC_DATASET_VOCABULARY = {
     "risks": _vocab(("risk report", "principal risks", "risk management"), de=("Risikobericht", "wesentliche Risiken", "Risikomanagement"), zh=("风险报告", "主要风险")),
     "regulations": _vocab(("regulation", "regulatory requirements"), de=("Regulierung", "regulatorische Anforderungen"), zh=("法规", "监管要求")),
     "opportunities": _vocab(("growth opportunities", "strategic opportunities"), de=("Wachstumschancen", "strategische Chancen"), zh=("增长机会", "战略机会")),
+    "competitor_profiles": _vocab(
+        ("company profile", "business scope", "target customers"),
+        de=("Unternehmensprofil", "Geschäftsbereiche", "Zielkunden"),
+        zh=("公司概况", "业务范围", "目标客户"),
+        sources=("official website", "annual report", "investor relations"),
+    ),
+    "product_portfolios": _vocab(
+        ("product portfolio", "products and services", "product catalog"),
+        de=("Produktportfolio", "Produkte und Dienstleistungen", "Produktkatalog"),
+        zh=("产品组合", "产品与服务", "产品目录"),
+        sources=("official product page", "product catalog", "official documentation"),
+    ),
+    "positioning": _vocab(
+        ("market positioning", "value proposition", "customer segment"),
+        de=("Marktpositionierung", "Wertversprechen", "Kundensegment"),
+        zh=("市场定位", "价值主张", "客户群体"),
+        sources=("official website", "investor presentation", "annual report"),
+    ),
+    "channel_or_store_coverage": _vocab(
+        ("store network", "sales channels", "geographic coverage"),
+        de=("Filialnetz", "Vertriebskanäle", "regionale Abdeckung"),
+        zh=("门店网络", "销售渠道", "地区覆盖"),
+        sources=("annual report", "official store locator", "official channel page"),
+    ),
+    "customer_segments": _vocab(
+        ("customer segments", "customer profile", "target market"),
+        de=("Kundensegmente", "Kundenprofil", "Zielmarkt"),
+        zh=("客户细分", "用户画像", "目标市场"),
+        sources=("annual report", "official website", "investor presentation"),
+    ),
+    "product_features": _vocab(
+        ("product features", "technical specifications", "feature comparison"),
+        de=("Produktfunktionen", "technische Daten", "Funktionsvergleich"),
+        zh=("产品功能", "技术规格", "功能对比"),
+        sources=("official documentation", "official product page", "technical datasheet"),
+    ),
+    "marketing_activity": _vocab(
+        ("marketing campaign", "brand campaign", "partnership announcement"),
+        de=("Marketingkampagne", "Markenkampagne", "Partnerschaft"),
+        zh=("营销活动", "品牌活动", "合作公告"),
+        sources=("official newsroom", "official social channel", "annual report"),
+    ),
+    "financial_or_operational_metrics": _vocab(
+        ("revenue", "operating metrics", "key performance indicators"),
+        de=("Umsatz", "operative Kennzahlen", "Leistungsindikatoren"),
+        zh=("收入", "运营指标", "关键绩效指标"),
+        sources=("annual report", "regulatory filing", "investor relations"),
+    ),
     "prices": _vocab(("prices", "pricing", "price list"), de=("Preise", "Preisliste"), zh=("价格", "价目表"), forbidden=()),
     "price_observations": _vocab(("prices", "pricing", "price list"), de=("Preise", "Preisliste"), zh=("价格", "菜单价格"), forbidden=()),
     "product_prices": _vocab(("product prices", "price list"), de=("Produktpreise", "Preisliste"), zh=("产品价格", "价目表"), forbidden=()),
@@ -257,9 +305,12 @@ def _scope_industry_text(scope):
 
 
 def entity_search_profile(scope, entity=None):
-    text = " ".join(str(scope.get(key) or "") for key in ("topic", "target_entity", "industry")).lower()
-    if entity:
-        text = f"{entity} {text}".lower()
+    # An explicit peer must not inherit the target company's aliases/domains.
+    # Otherwise a query for a competitor can incorrectly become
+    # ``site:target.com \"competitor\" ...`` and systematically return no data.
+    text = str(entity).lower() if entity else " ".join(
+        str(scope.get(key) or "") for key in ("topic", "target_entity", "industry")
+    ).lower()
     for profile in ENTITY_PROFILES:
         if any(token in text for token in profile["tokens"]):
             result = {key: tuple(value) for key, value in profile.items() if key != "tokens"}
@@ -474,11 +525,17 @@ def build_dataset_queries(
         )
         if domains:
             queries.append(("en", domains[0], f'site:{domains[0]} "{name}" "{metric_one}" {period}', "", preferred_source))
-        queries.extend([
+        generic_queries = [
             ("en", "", f'"{name}" {preferred_source} {period} "{metric_one}"', "", preferred_source),
             (local_key, "", f'"{local_name}" {local_metric} {period}', "", preferred_source),
             ("en", "", f'filetype:pdf "{name}" {metric_one} {metric_two} {period}', "PDF", preferred_source),
-        ])
+        ]
+        # For local-market research, the first bounded query should use the
+        # market language. This matters when the planner assigns one query per
+        # entity/dataset to maximize cohort coverage.
+        if languages and languages[0] not in {"en", "unknown"}:
+            generic_queries[0], generic_queries[1] = generic_queries[1], generic_queries[0]
+        queries.extend(generic_queries)
 
     output, seen = [], set()
     for index, (language, domain, query, file_type, preferred_type) in enumerate(queries, 1):

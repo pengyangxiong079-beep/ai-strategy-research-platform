@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import main
+from dashboard.exporter import DashboardExportError, generate_dashboard_html
 from pipeline_v2.agent_provider import create_ready_agent_registry
 from pipeline_v2.ids import stable_id
 from pipeline_v2.service import PipelineV2Service
@@ -132,9 +133,22 @@ def continue_strategy(run, progress_callback=None):
             )
         else:
             output = orchestrator.execute(
-                run["folder"], stages=["human", "strategy", "report", "dashboard", "quality"],
+                # Dashboard consumes quality/summary.json. Keep the canonical
+                # dependency order so a newly generated board never embeds a
+                # stale or PENDING quality status.
+                run["folder"], stages=["human", "strategy", "report", "quality", "dashboard"],
                 human_feedback=feedback,
             )
+        # Prebuild the self-contained dashboard while the workflow progress UI
+        # is still visible. Results can then open/download it immediately.
+        # Export is a derived view and must not change a completed audit status.
+        try:
+            dashboard_path = generate_dashboard_html(
+                run.get("base_folder") or run["folder"], run.get("revision_id"),
+            )
+            output["dashboard_html"] = str(dashboard_path)
+        except (DashboardExportError, OSError, TypeError, ValueError) as error:
+            output["dashboard_html_error"] = str(error)
         invalidate_file_cache()
         return output
     result = main.load_run_history(run["run_id"])

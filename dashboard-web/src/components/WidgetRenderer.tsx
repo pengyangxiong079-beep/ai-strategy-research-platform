@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { Catalog, ReportBundle } from "../types";
 import type { WidgetSpec } from "../templates/types";
-import type { DashboardView } from "../lib/validation";
+import { datasetValue, type DashboardView } from "../lib/validation";
 import { KpiSummary } from "./KpiSummary";
 import { TimeSeriesChart } from "./TimeSeriesChart";
 import { StackedCompositionChart } from "./StackedCompositionChart";
@@ -62,5 +62,12 @@ export function WidgetRenderer({ spec, view, locale, catalog, current }: Props) 
   };
   const render = components[spec.component];
   if (!render) return <EmptyState reason={`组件 ${spec.component} 尚未注册。`} />;
+  const dataset = datasetValue(view, spec.dataset);
+  const empty = Array.isArray(dataset) ? dataset.length === 0 : !dataset;
+  const availability = view.visual_availability[spec.dataset];
+  if (empty && availability && availability.status !== "AVAILABLE") {
+    const action = availability.required_action ? ` 建议：${availability.required_action}` : "";
+    return <div className="widget-block" data-widget={spec.id} aria-label={spec.title}><EmptyState title={`${spec.title}暂不可用`} reason={`${availability.reason}${action}`} /></div>;
+  }
   return <div className="widget-block" data-widget={spec.id} aria-label={spec.title}>{render()}</div>;
 }

@@ -17,6 +17,22 @@ BUDGETS = {
 }
 
 
+COMPARISON_DATASETS = {
+    "competitor_profiles", "product_portfolios", "price_observations",
+    "positioning", "channel_or_store_coverage", "customer_segments",
+    "product_features", "financial_or_operational_metrics", "capabilities",
+}
+
+
+def comparison_cohort(scope, minimum_entities=1):
+    """Return the explicit target plus only the peers required by a contract."""
+    profile = entity_search_profile(scope)
+    target = str(scope.get("target_entity") or profile["names"][0]).strip()
+    values = [target, *(str(value).strip() for value in scope.get("competitors") or [])]
+    unique = [value for value in dict.fromkeys(values) if value]
+    return unique[:max(1, int(minimum_entities or 1))]
+
+
 def search_languages(geography):
     value = str(geography or "").lower()
     if any(x in value for x in ("中国", "china", "湖南", "长沙")):
@@ -48,28 +64,66 @@ def build_search_plan(scope, requirements):
     prior_year = current_year - 1
     competitors = scope.get("competitors") or []
     queries = []
-    discovery = [
-        (languages[0], f'"{local_entities[0]}" official corporate website'),
-        ("en", f'"{primary_entity}" annual report {prior_year} investor relations filetype:pdf'),
-        ("de" if "de" in languages else languages[0], f'"{local_entities[0]}" {"Geschäftsbericht" if "de" in languages else "官方数据"} {prior_year}'),
-    ]
-    for language, query in discovery:
-        queries.append({"round": 1, "dataset_id": "source_discovery", "language": language, "query": query})
+    priority_rank = {"CRITICAL": 0, "IMPORTANT": 1}
+    datasets = [item for item in requirements.get("datasets", []) if item.get("priority") in priority_rank]
+    datasets.sort(key=lambda item: (priority_rank[item["priority"]], 0 if item["dataset_id"] == "operating_metrics" else 1))
+
+    max_required_entities = max(
+        (int(item.get("minimum_entities") or 1) for item in datasets if item.get("dataset_id") in COMPARISON_DATASETS),
+        default=1,
+    )
+    discovery_entities = comparison_cohort(scope, max_required_entities)
+    for entity in discovery_entities:
+        language = languages[0]
+        query = (
+            f'"{entity}" official website annual report {prior_year}'
+            if language == "en" else
+            f'"{entity}" {"Geschäftsbericht" if language == "de" else "官网 年报"} {prior_year}'
+        )
+        queries.append({
+            "round": 1, "dataset_id": "source_discovery", "language": language,
+            "entity": entity, "query": query, "query_text": query,
+        })
     if budget["max_rounds"] >= 2:
-        priority_rank = {"CRITICAL": 0, "IMPORTANT": 1}
-        datasets = [item for item in requirements.get("datasets", []) if item.get("priority") in priority_rank]
-        # Operational evidence is decision-critical for company/industry work even if registered IMPORTANT.
-        datasets.sort(key=lambda item: (priority_rank[item["priority"]], 0 if item["dataset_id"] == "operating_metrics" else 1))
         for item in datasets:
-            remaining = initial_query_limit - len(queries)
-            if remaining <= 0:
-                break
-            planned = build_dataset_queries(
-                scope, item["dataset_id"], languages=languages,
-                limit=min(5 if item["dataset_id"] == "operating_metrics" else 2, remaining),
+            required_entities = (
+                comparison_cohort(scope, item.get("minimum_entities", 1))
+                if item.get("dataset_id") in COMPARISON_DATASETS
+                else comparison_cohort(scope, 1)
             )
-            for query in planned:
-                queries.append({"round": 2, "dataset_id": item["dataset_id"], **query})
+            for entity in required_entities:
+                remaining = initial_query_limit - len(queries)
+                if remaining <= 0:
+                    break
+                planned = build_dataset_queries(
+                    scope, item["dataset_id"], entity=entity, languages=languages,
+                    limit=min(4, remaining) if item["dataset_id"] == "operating_metrics" else 1,
+                )
+                for query in planned:
+                    queries.append({"round": 2, "priority": item["priority"], **query})
+            if len(queries) >= initial_query_limit:
+                break
+
+    # Query IDs produced independently by dataset builders are only local IDs.
+    # Re-key the final auditable plan globally to prevent collision downstream.
+    for index, query in enumerate(queries[:initial_query_limit], 1):
+        query["query_id"] = f"Q{index:03d}"
+        query["query_text"] = query.get("query_text") or query.get("query") or ""
+    coverage_targets = []
+    for item in datasets:
+        expected = (
+            comparison_cohort(scope, item.get("minimum_entities", 1))
+            if item.get("dataset_id") in COMPARISON_DATASETS else comparison_cohort(scope, 1)
+        )
+        covered = list(dict.fromkeys(
+            query.get("entity") for query in queries[:initial_query_limit]
+            if query.get("dataset_id") == item["dataset_id"] and query.get("entity")
+        ))
+        coverage_targets.append({
+            "dataset_id": item["dataset_id"], "priority": item["priority"],
+            "expected_entities": expected, "query_covered_entities": covered,
+            "coverage_complete": set(expected) <= set(covered),
+        })
     return {
         "schema_version": "1.0",
         "languages": languages,
@@ -79,5 +133,6 @@ def build_search_plan(scope, requirements):
         "industry_term_variants": [scope.get("industry", "")],
         "currency_unit_variants": [scope.get("currency", "未指定")],
         "budget": budget,
+        "coverage_targets": coverage_targets,
         "queries": queries[:initial_query_limit],
     }

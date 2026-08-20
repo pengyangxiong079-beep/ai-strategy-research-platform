@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 
 from dashboard.registry import prepare_components
-from tools.audit_latest_run import audit_run, discover_runs, main as audit_main, scan_repository, select_run
+from tools.audit_latest_run import audit_run, discover_runs, main as audit_main, scan_repository, select_revision, select_run
 
 
 def _write_json(path: Path, payload):
@@ -50,6 +50,34 @@ def test_latest_run_uses_parsed_manifest_timestamp_not_folder_name(tmp_path):
     assert incomplete is None
 
 
+def test_latest_run_treats_completed_active_revision_as_canonical(tmp_path):
+    root = tmp_path / "outputs"
+    older = _complete_run(root, "older", "2026-01-01T00:00:00+00:00")
+    newer = _complete_run(root, "newer", "2026-08-20T00:00:00+00:00")
+    # Simulate an immutable base snapshot whose derived artifacts are absent,
+    # while its explicitly activated revision is complete.
+    (newer / "04_final_report.md").unlink()
+    revision = newer / "revisions/rev_001"
+    revision.mkdir(parents=True)
+    for path in older.iterdir():
+        if path.is_file() and path.name not in {"01_research_brief.md", "05_quality_check.json"}:
+            (revision / path.name).write_bytes(path.read_bytes())
+    _write_json(revision / "research/research_model.json", {"claims": []})
+    _write_json(revision / "quality/summary.json", {"status": "PASS"})
+    _write_json(revision / "run_state.json", {"overall_status": "COMPLETED"})
+    _write_json(revision / "revision_manifest.json", {"status": "COMPLETED"})
+    _write_json(newer / "run_state.json", {"active_revision_id": "rev_001"})
+    manifest = json.loads((newer / "run_manifest.json").read_text(encoding="utf-8"))
+    manifest["latest_revision"] = None
+    _write_json(newer / "run_manifest.json", manifest)
+
+    selected, incomplete = select_run(discover_runs(root))
+    revision_id, revision_folder = select_revision(selected["folder"], selected["manifest"])
+    assert selected["folder"] == newer
+    assert incomplete is None
+    assert (revision_id, revision_folder) == ("rev_001", revision)
+
+
 def test_audit_detects_scenario_gap_and_ready_reason(tmp_path):
     folder = _complete_run(tmp_path / "outputs", "run", "2026-08-09T00:00:00+00:00")
     row = discover_runs(tmp_path / "outputs")[0]
@@ -66,6 +94,84 @@ def test_gap_search_without_opened_source_log_cannot_be_completed(tmp_path):
     _write_json(folder / "data" / "search_log.json", {"entries": [{"execution_status": "COMPLETED", "executed_at": "2026-08-09T00:00:00Z", "result_count": 1, "opened_sources": []}]})
     payload = audit_run(discover_runs(tmp_path / "outputs")[0], "current", folder)
     assert "GAP_SEARCH_FALSE_COMPLETION" in {issue["rule_id"] for issue in payload["raw_issues"]}
+
+
+def test_audit_accepts_v2_targeted_gap_search_with_before_after_evidence(tmp_path):
+    root = tmp_path / "outputs"
+    folder = _complete_run(root, "run", "2026-08-09T00:00:00+00:00")
+    revision = folder / "revisions/rev_001"
+    revision.mkdir(parents=True)
+    for name in (
+        "00_analysis_scope.json", "02_review_notes.md", "03_fact_check.json",
+        "04_final_report.md", "04_report_data.json", "05_quality_check.json",
+        "06_dashboard_data.json",
+    ):
+        (revision / name).write_bytes((folder / name).read_bytes())
+    _write_json(folder / "data/source_registry.json", {"sources": []})
+    _write_json(folder / "data/observations.json", {"observations": []})
+    source = {
+        "source_id": "SRC_NEW", "access_status": "SUCCESS",
+    }
+    observation = {
+        "observation_id": "OBS_NEW", "dataset_id": "competitors", "source_id": "SRC_NEW",
+    }
+    _write_json(revision / "data/source_registry.json", {"sources": [source]})
+    _write_json(revision / "data/sources.json", {"sources": [source]})
+    _write_json(revision / "data/observations.json", {"observations": [observation]})
+    _write_json(revision / "data/data_coverage.json", {
+        "observation_count": 1, "gap_search_rounds_completed": 1,
+        "datasets": [{"dataset_id": "competitors", "status": "PASS", "periods": []}],
+    })
+    _write_json(revision / "data/targeted_gap_search.json", {
+        "status": "COMPLETED", "target_dataset_ids": ["competitors"],
+        "resolved_dataset_ids": ["competitors"],
+        "targets": [{
+            "dataset_id": "competitors",
+            "recommended_queries": [{"query": "Example competitor annual report"}],
+        }],
+    })
+    payload = audit_run(discover_runs(root)[0], "rev_001", revision)
+    assert "GAP_SEARCH_FALSE_COMPLETION" not in {issue["rule_id"] for issue in payload["raw_issues"]}
+
+
+def test_audit_accepts_completed_bounded_search_with_explicit_remaining_gap(tmp_path):
+    root = tmp_path / "outputs"
+    folder = _complete_run(root, "run", "2026-08-09T00:00:00+00:00")
+    revision = folder / "revisions/rev_001"
+    revision.mkdir(parents=True)
+    for name in (
+        "00_analysis_scope.json", "02_review_notes.md", "03_fact_check.json",
+        "04_final_report.md", "04_report_data.json", "05_quality_check.json",
+        "06_dashboard_data.json",
+    ):
+        (revision / name).write_bytes((folder / name).read_bytes())
+    _write_json(folder / "data/source_registry.json", {"sources": []})
+    _write_json(folder / "data/observations.json", {"observations": []})
+    sources = [{"source_id": "SRC_NEW", "access_status": "SUCCESS"}]
+    observations = [{
+        "observation_id": "OBS_NEW", "dataset_id": "competitors", "source_id": "SRC_NEW",
+    }]
+    _write_json(revision / "data/sources.json", {"sources": sources})
+    _write_json(revision / "data/observations.json", {"observations": observations})
+    _write_json(revision / "data/data_coverage.json", {
+        "observation_count": 1, "gap_search_rounds_completed": 1,
+        "datasets": [
+            {"dataset_id": "competitors", "status": "PASS", "periods": []},
+            {"dataset_id": "customer_segments", "status": "PARTIAL", "periods": []},
+        ],
+    })
+    _write_json(revision / "data/targeted_gap_search.json", {
+        "status": "COMPLETED",
+        "target_dataset_ids": ["competitors", "customer_segments"],
+        "resolved_dataset_ids": ["competitors"],
+        "remaining_dataset_ids": ["customer_segments"],
+        "targets": [{
+            "dataset_id": "competitors",
+            "recommended_queries": [{"query": "Example official competitor profile"}],
+        }],
+    })
+    payload = audit_run(discover_runs(root)[0], "rev_001", revision)
+    assert "GAP_SEARCH_FALSE_COMPLETION" not in {issue["rule_id"] for issue in payload["raw_issues"]}
 
 
 def test_prepare_components_clears_missing_reason_when_ready():

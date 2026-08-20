@@ -335,6 +335,57 @@ class RevisionExecutor:
         result = self.execute(base, plan.revision_id)
         return {**result, "revision_id": plan.revision_id}
 
+    def recover_blocked_data_candidate(self, base_folder, revision_id) -> dict:
+        """Recover a Data envelope that lost only its final root brace.
+
+        The saved candidate is re-parsed and deterministically gated locally;
+        downstream research stages then resume normally. No Data Agent call is
+        made and no search round is consumed.
+        """
+        from .envelope import parse_envelope
+
+        base = Path(base_folder)
+        revision = base / "revisions" / revision_id
+        state = load_run_state(revision)
+        execution = self._load_execution(base, revision_id)
+        if (
+            execution.get("plan_status") != "FAILED"
+            or execution.get("failed_stage") != "data"
+            or state.get("current_stage") != "data"
+        ):
+            raise ValueError("Local Data recovery requires a revision failed at data")
+        candidates = sorted(
+            (revision / "quality/candidates").glob("data_attempt_*_invalid.json"),
+            key=lambda path: path.stat().st_mtime,
+        )
+        if not candidates:
+            raise ValueError("No saved invalid Data candidate is available")
+        saved = _read(candidates[-1], {})
+        attempt = int(saved.get("attempt") or state.get("stages", {}).get("data", {}).get("attempt") or 1)
+        envelope = parse_envelope(
+            saved.get("raw_response"), stage="data", attempt=attempt,
+            run_id=state["run_id"], revision_id=state.get("revision_id", revision_id),
+        )
+        _write(
+            revision / "quality/candidates" / f"data_attempt_{attempt}_recovered.json",
+            envelope,
+        )
+        self.orchestrator.revalidate_data_artifacts(revision, envelope["artifacts"])
+        pending = list(execution.get("pending_stages") or [])
+        if pending and pending[0] == "data":
+            pending.pop(0)
+        completed = list(execution.get("completed_stages") or [])
+        if "data" not in completed:
+            completed.append("data")
+        execution.update({
+            "plan_status": "CREATED", "current_stage": None,
+            "completed_stages": completed, "pending_stages": pending,
+            "failed_stage": None, "checkpoint_at": now_iso(),
+        })
+        execution.setdefault("attempts", {})["data"] = attempt
+        _write(revision / "execution_state.json", execution)
+        return self.execute(base, revision_id)
+
     def recover_blocked_strategy(self, base_folder) -> dict:
         """Recover an equivalent but wrapped Strategy artifact without an Agent call."""
         from .envelope import parse_envelope

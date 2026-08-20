@@ -132,6 +132,30 @@ class PipelineV2Orchestrator:
         self._commit_gate(folder, state, "fact_check", payload, context, gate=gate)
         return load_run_state(folder)
 
+    def revalidate_data_artifacts(self, folder, artifacts) -> dict:
+        """Promote a locally syntax-recovered Data candidate without web calls."""
+        folder = Path(folder)
+        state = load_run_state(folder)
+        if not state or state.get("pipeline_version") != "2.0":
+            raise ValueError("Data local revalidation requires a Pipeline V2 run")
+        candidate = json.loads(json.dumps(artifacts, ensure_ascii=False))
+        self._merge_targeted_gap_artifacts(folder, candidate)
+        self._normalize_data_artifacts(folder, candidate)
+        payload, context = self._gate_payload(folder, "data", candidate)
+        gate = validate_stage("data", payload, context)
+        if not gate.can_continue:
+            codes = ", ".join(row.get("rule_id", "UNKNOWN") for row in gate.errors)
+            raise ValueError(f"Saved Data candidate still fails current contracts: {codes}")
+        self._finalize_targeted_gap_search(folder, candidate)
+        self._persist_artifacts(folder, "data", candidate)
+        state.setdefault("events", []).append({
+            "at": now_iso(), "stage": "data",
+            "event": "DATA_CANDIDATE_REVALIDATED_LOCALLY",
+            "detail": "A losslessly syntax-recovered candidate was normalized and validated without another Data Agent call",
+        })
+        self._commit_gate(folder, state, "data", payload, context, gate=gate)
+        return load_run_state(folder)
+
     def revalidate_strategy_artifacts(self, folder, artifacts) -> dict:
         """Promote an already-generated Strategy candidate after local shape normalization."""
         folder = Path(folder)
@@ -272,15 +296,29 @@ class PipelineV2Orchestrator:
                 previous_invalid = None
                 candidate_folder = folder / "quality/candidates"
                 candidate_folder.mkdir(parents=True, exist_ok=True)
-                _write(candidate_folder / f"{stage}_attempt_{attempt}.json", envelope)
                 if stage == "data":
+                    # Preserve the exact Agent response, then promote only the
+                    # deterministic, normalized data candidate to the gate.
+                    _write(candidate_folder / f"{stage}_attempt_{attempt}_agent.json", envelope)
                     self._merge_targeted_gap_artifacts(folder, envelope["artifacts"])
+                    self._normalize_data_artifacts(folder, envelope["artifacts"])
+                _write(candidate_folder / f"{stage}_attempt_{attempt}.json", envelope)
                 payload, context = self._gate_payload(folder, stage, envelope["artifacts"])
                 gate = validate_stage(stage, payload, context)
                 if gate.can_continue:
                     if stage == "data":
                         self._finalize_targeted_gap_search(folder, envelope["artifacts"])
                     self._persist_artifacts(folder, stage, envelope["artifacts"])
+                    if stage == "fact_check":
+                        resolved = self._reconcile_review_after_fact_check(
+                            folder, envelope["artifacts"]["verified_claims"],
+                        )
+                        if resolved:
+                            state.setdefault("events", []).append({
+                                "at": now_iso(), "stage": "fact_check",
+                                "event": "REVIEW_VERIFICATION_ITEMS_AUTO_RESOLVED",
+                                "resolved_count": resolved,
+                            })
                     return self._commit_gate(folder, state, stage, payload, context, gate=gate)
                 last_errors = [self._normalize_issue(x, attempt) for x in gate.errors]
             except AgentOutputError as error:
@@ -411,6 +449,69 @@ class PipelineV2Orchestrator:
         artifacts["sufficiency"] = sufficiency
 
     @staticmethod
+    def _normalize_data_artifacts(folder: Path, artifacts: dict):
+        """Make canonical Data artifacts deterministic in every live run.
+
+        The Data Agent performs web research, but it cannot weaken the planned
+        requirement contract or declare its own unverified PASS. Fake fixtures
+        intentionally retain their compact synthetic contract.
+        """
+        scope = _read(folder / "00_analysis_scope.json", {})
+        incoming_sources = list((artifacts.get("source_registry") or {}).get("sources") or [])
+        incoming_observations = list((artifacts.get("observations") or {}).get("observations") or [])
+        synthetic_fixture = bool(incoming_sources and incoming_observations) and all(
+            isinstance(row, dict) and row.get("is_test_fixture")
+            for row in [*incoming_sources, *incoming_observations]
+        )
+        if scope.get("is_test_fixture") or synthetic_fixture:
+            return
+
+        from research_platform.data_requirements import build_requirements
+        from research_platform.normalization import (
+            canonicalize_entity, dedupe_observations, dedupe_sources,
+            is_valid_observation, normalize_source,
+        )
+        from research_platform.search import comparison_cohort
+        from research_platform.sufficiency import evaluate_sufficiency
+
+        requirements = build_requirements(scope)
+        raw_sources = incoming_sources
+        normalized_all = [normalize_source(row) for row in raw_sources if isinstance(row, dict)]
+        sources = dedupe_sources(normalized_all)
+        canonical_by_identity = {
+            (row.get("url") or row.get("source_id")): row.get("source_id") for row in sources
+        }
+        source_aliases = {
+            row.get("source_id"): canonical_by_identity.get(row.get("url") or row.get("source_id"), row.get("source_id"))
+            for row in normalized_all if row.get("source_id")
+        }
+        source_ids = {row.get("source_id") for row in sources if row.get("source_id")}
+        known_entities = comparison_cohort(scope, len(scope.get("competitors") or []) + 1)
+        raw_observations = []
+        for raw in (artifacts.get("observations") or {}).get("observations") or []:
+            if not isinstance(raw, dict):
+                continue
+            row = dict(raw)
+            row["source_id"] = source_aliases.get(row.get("source_id"), row.get("source_id"))
+            row["entity"] = canonicalize_entity(row.get("entity"), known_entities)
+            raw_observations.append(row)
+        observations = dedupe_observations(raw_observations, sources, scope.get("industry"))
+        observations = [
+            row for row in observations if is_valid_observation(row, source_ids)[0]
+        ]
+        declared = artifacts.get("sufficiency") if isinstance(artifacts.get("sufficiency"), dict) else {}
+        rounds = int(declared.get("gap_search_rounds_completed") or 0)
+        stop_reason = str(declared.get("search_stop_reason") or "Deterministic coverage recomputed from canonical evidence.")
+        sufficiency = evaluate_sufficiency(
+            requirements, observations, sources, scope,
+            gap_rounds_completed=rounds, stop_reason=stop_reason,
+        )
+        artifacts["requirements"] = requirements
+        artifacts["source_registry"] = {"schema_version": "1.0", "sources": sources}
+        artifacts["observations"] = {"schema_version": "1.0", "observations": observations}
+        artifacts["sufficiency"] = sufficiency
+
+    @staticmethod
     def _finalize_targeted_gap_search(folder: Path, artifacts: dict):
         path = folder / "data/targeted_gap_search.json"
         marker = _read(path, {})
@@ -444,6 +545,40 @@ class PipelineV2Orchestrator:
         _write(path, marker)
 
     @staticmethod
+    def _reconcile_review_after_fact_check(folder: Path, verified_payload: dict) -> int:
+        """Close Review items made obsolete by the subsequent Fact Check."""
+        import re
+
+        if not isinstance(verified_payload, dict):
+            return 0
+        ledger = {
+            row.get("observation_id"): str(row.get("verification_status") or "NOT_CHECKED").upper()
+            for row in verified_payload.get("observation_verifications", [])
+            if isinstance(row, dict) and row.get("observation_id")
+        }
+        path = folder / "02_review_notes.json"
+        payload = _read(path, _read(folder / "review/review_notes.json", {"issues": []}))
+        issues = list(payload.get("issues") or [])
+        resolved = 0
+        for issue in issues:
+            if str(issue.get("status") or "OPEN").upper() != "OPEN":
+                continue
+            if "verification" not in str(issue.get("category") or "").lower():
+                continue
+            text = " ".join(str(issue.get(key) or "") for key in ("issue", "evidence", "required_action"))
+            observation_ids = list(dict.fromkeys(re.findall(r"(?<![A-Za-z0-9_])O\d+(?!\d)", text)))
+            if observation_ids and all(ledger.get(value) in {"SUPPORTED", "PARTIAL"} for value in observation_ids):
+                issue["status"] = "RESOLVED"
+                issue["resolution"] = "Fact Check subsequently verified the referenced Observation(s)."
+                resolved += 1
+        if resolved:
+            normalized = {"schema_version": "2.0", "issues": issues}
+            _write(path, normalized)
+            _write(folder / "review/review_notes.json", normalized)
+            _write(folder / "review/review_issues.json", normalized)
+        return resolved
+
+    @staticmethod
     def _bounded_gap_context(folder: Path, previous_output: dict | None, errors: list[dict]) -> dict:
         scope = _read(folder / "00_analysis_scope.json", {})
         artifacts = previous_output.get("artifacts", {}) if isinstance(previous_output, dict) else {}
@@ -463,7 +598,15 @@ class PipelineV2Orchestrator:
                 gap = gap if isinstance(gap, dict) else {}
                 entity = str(gap.get("entity") or scope.get("company") or scope.get("topic") or "").strip()
                 missing = str(gap.get("missing_field") or "dataset").strip()
-                queries = [str(query).strip() for query in gap.get("recommended_queries", []) if str(query).strip()]
+                queries = []
+                for raw_query in gap.get("recommended_queries", []):
+                    query = (
+                        raw_query.get("query_text") or raw_query.get("query") or ""
+                        if isinstance(raw_query, dict) else str(raw_query)
+                    )
+                    query = str(query).strip()
+                    if query and query not in queries:
+                        queries.append(query)
                 if not queries:
                     query_subject = " ".join(x for x in (entity, dataset_id, missing) if x)
                     queries = [f"{query_subject} official filing investor relations {scope.get('analysis_date', '')}".strip()]
@@ -516,7 +659,9 @@ class PipelineV2Orchestrator:
     def _run_report(self, folder: Path, state: dict) -> bool:
         self._begin(folder, state, "report")
         report_model = _read(folder / "strategy/report_model.json", {})
-        claims = _read(folder / "fact_check/verified_claims.json", {"claims": []}).get("claims", [])
+        verified_payload = _read(folder / "fact_check/verified_claims.json", {"claims": [], "observation_verifications": []})
+        claims = verified_payload.get("claims", [])
+        observation_verifications = verified_payload.get("observation_verifications", [])
         scope = _read(folder / "00_analysis_scope.json", {})
         narrative = " ".join(str(row.get("text") or "") for row in report_model.get("paragraphs", []))
         scenario_terms = ("保守", "基准", "乐观")
@@ -541,6 +686,7 @@ class PipelineV2Orchestrator:
         blocks = report_data_payload(
             report_model, claims, recs, "", run_id=state["run_id"], revision_id=state["revision_id"],
             observations=observations, sufficiency=sufficiency,
+            observation_verifications=observation_verifications,
         )["content_blocks"]
         markdown = render_content_blocks(report_model.get("title", "战略研究报告"), blocks)
         (rendered / "04_final_report.md").write_text(markdown, encoding="utf-8")
@@ -548,6 +694,7 @@ class PipelineV2Orchestrator:
         report_data = report_data_payload(
             report_model, claims, recs, markdown, run_id=state["run_id"], revision_id=state["revision_id"],
             observations=observations, sufficiency=sufficiency,
+            observation_verifications=observation_verifications,
         )
         report_data["meta"]["final_report_sha256"] = sha256_file(folder / "04_final_report.md")
         schema_errors = validate_report_data(report_data)
@@ -560,8 +707,11 @@ class PipelineV2Orchestrator:
     def _run_dashboard(self, folder: Path, state: dict) -> bool:
         self._begin(folder, state, "dashboard")
         observations = _read(folder / "data/observations.json", {"observations": []}).get("observations", [])
-        claims = _read(folder / "fact_check/verified_claims.json", {"claims": []}).get("claims", [])
-        dashboard_observations = attach_fact_verification(observations, claims)
+        verified_payload = _read(folder / "fact_check/verified_claims.json", {"claims": [], "observation_verifications": []})
+        claims = verified_payload.get("claims", [])
+        dashboard_observations = attach_fact_verification(
+            observations, claims, verified_payload.get("observation_verifications", []),
+        )
         scope = _read(folder / "00_analysis_scope.json", {})
         sources = _read(folder / "data/sources.json", _read(folder / "data/source_registry.json", {"sources": []})).get("sources", [])
         source_map = {row.get("source_id"): row for row in sources}
@@ -576,9 +726,15 @@ class PipelineV2Orchestrator:
         if quality_status not in {"PASS", "WARN", "FAIL", "UNKNOWN"}:
             quality_status = "WARN" if "WARN" in quality_status else "UNKNOWN"
         recommendations = dashboard_report["recommendations"]
+        availability = dict(report_data.get("visual_availability", {}))
+        if "roadmap" in availability:
+            availability.setdefault("initiatives", availability["roadmap"])
+        has_visual_gaps = bool(report_data.get("validation_errors") or report_data.get("data_gaps")) or any(
+            row.get("status") != "AVAILABLE" for row in availability.values() if isinstance(row, dict)
+        )
         payload = {
             "schema_version": "2.0", "derived_from_markdown": False,
-            "dashboard_status": "READY_WITH_GAPS" if report_data.get("validation_errors") else "READY",
+            "dashboard_status": "READY_WITH_GAPS" if has_visual_gaps else "READY",
             "quality_status": quality_status,
             "meta": {"run_id": state["run_id"], "revision_id": state["revision_id"], "analysis_type": scope.get("analysis_type_id", "GENERIC_STRATEGY"), "topic": scope.get("topic", ""), "is_demo": bool(scope.get("is_test_fixture"))},
             "executive_summary": {
@@ -587,10 +743,11 @@ class PipelineV2Orchestrator:
             },
             "metrics": report_data.get("metrics", []),
             "time_series": report_data.get("time_series", []), "comparisons": report_data.get("comparisons", []),
-            "matrices": [], "segments": report_data.get("segments", []), "geographies": [],
+            "matrices": report_data.get("matrices", []), "segments": report_data.get("segments", []),
+            "geographies": report_data.get("geographies", []),
             "risks": report_data.get("risks", []), "opportunities": report_data.get("opportunities", []), "strategic_options": [],
             "recommendations": recommendations,
-            "initiatives": [],
+            "initiatives": report_data.get("roadmap", []),
             "scenarios": report_data.get("scenarios", []), "content_blocks": report_data.get("content_blocks", []),
             "observations": dashboard_observations,
             "data_coverage": _read(folder / "data/data_coverage.json", _read(folder / "data/sufficiency.json", {})),
@@ -604,7 +761,17 @@ class PipelineV2Orchestrator:
             "report_version": state["revision_id"],
             "template_id": scope.get("analysis_type_id", "GENERIC_STRATEGY"),
             "industry_template_id": scope.get("selected_template") or "general",
-            "components": [], "excluded_metrics": [], "validation_errors": [],
+            "component_availability": availability,
+            "components": [
+                {
+                    "component_id": key,
+                    "status": "READY" if value.get("status") == "AVAILABLE" else "INSUFFICIENT_DATA",
+                    "reason": "" if value.get("status") == "AVAILABLE" else value.get("reason") or "",
+                    "required_action": value.get("required_action") or "",
+                }
+                for key, value in availability.items() if isinstance(value, dict)
+            ],
+            "excluded_metrics": [], "validation_errors": [],
             "report_data": dashboard_report,
         }
         gate = validate_stage("dashboard", payload, {})
@@ -670,6 +837,13 @@ class PipelineV2Orchestrator:
         if not gate.can_continue:
             self._block(folder, state, stage, gate.errors, "BLOCKED_DATA" if stage == "data" else "BLOCKED_QUALITY")
             return False
+        issues_path = Path(folder) / "quality/issues.json"
+        issues = _read(issues_path, {"issues": []}).get("issues", [])
+        if any(row.get("stage") == stage for row in issues):
+            _write(issues_path, {
+                "schema_version": "2.0",
+                "issues": [row for row in issues if row.get("stage") != stage],
+            })
         current = state["stages"][stage]
         current.update(status="COMPLETE_WITH_WARNINGS" if gate.warnings else "COMPLETE", validation_status=gate.status, completed_at=now_iso(), error_codes=[])
         state["dependency_state"][stage] = "CURRENT"
@@ -716,8 +890,18 @@ class PipelineV2Orchestrator:
 
     @staticmethod
     def _stage_inputs(folder: Path, stage: str) -> dict:
+        if stage == "data":
+            from research_platform.data_requirements import build_requirements
+            from research_platform.search import build_search_plan
+
+            scope = _read(folder / "00_analysis_scope.json", {})
+            requirements = build_requirements(scope)
+            return {
+                "00_analysis_scope.json": scope,
+                "data/planned_requirements.json": requirements,
+                "data/search_plan.json": build_search_plan(scope, requirements),
+            }
         paths = {
-            "data": ["00_analysis_scope.json"],
             "research": ["data/requirements.json", "data/source_registry.json", "data/observations.json", "data/sufficiency.json"],
             "review": [
                 "research/claims.json", "research/research_model.json",
@@ -737,7 +921,15 @@ class PipelineV2Orchestrator:
         if stage == "research":
             obs = _read(folder / "data/observations.json", {"observations": []}).get("observations", [])
             src = _read(folder / "data/source_registry.json", {"sources": []}).get("sources", [])
-            return {"claims": artifacts["claims"]}, {"observations": obs, "sources": src}
+            requirements = _read(folder / "data/requirements.json", {"datasets": []})
+            required_dataset_ids = [
+                row.get("dataset_id") for row in requirements.get("datasets", [])
+                if row.get("priority") in {"CRITICAL", "IMPORTANT"} and row.get("dataset_id")
+            ]
+            return {"claims": artifacts["claims"]}, {
+                "observations": obs, "sources": src,
+                "required_dataset_ids": required_dataset_ids,
+            }
         if stage == "review":
             artifacts["review_notes"] = normalize_review_notes(artifacts["review_notes"])
             return {"issues": artifacts["review_notes"]}, {}
@@ -798,3 +990,12 @@ class PipelineV2Orchestrator:
                 claims = value.get("claims", [])
                 observation_verifications = value.get("observation_verifications", [])
                 _write(folder / "03_fact_check.json", {"schema_version": "2.0", "claims": claims, "observation_verifications": observation_verifications})
+        if stage == "data":
+            from research_platform.search import build_search_plan
+            from research_platform.sufficiency import build_gap_search_plan
+
+            scope = _read(folder / "00_analysis_scope.json", {})
+            search_plan = build_search_plan(scope, artifacts["requirements"])
+            gap_plan = build_gap_search_plan(artifacts["sufficiency"], search_plan)
+            _write(folder / "data/search_plan.json", search_plan)
+            _write(folder / "data/gap_search_plan.json", gap_plan)

@@ -29,7 +29,10 @@ STAGE_OUTPUT_CONTRACTS = {
             "claims": "Atomic claims; FACT claims use only registered source_ids and observation_ids.",
             "research_sections": "Sections with section_id, title, claim_ids and analysis.",
         },
-        "rules": ["atomicity_status is ATOMIC", "Do not invent IDs or sources"],
+        "rules": [
+            "atomicity_status is ATOMIC", "Do not invent IDs or sources",
+            "Cover every input Observation from a CRITICAL or IMPORTANT requirement in at least one Claim; split compound Observations into multiple atomic Claims when needed.",
+        ],
     },
     "review": {
         "artifact": "review_notes", "type": "array",
@@ -157,6 +160,12 @@ def _legacy_strict_output_instructions(stage: str) -> str:
             "evidence、required_action、status。review_id必须严格按R1、R2…连续编号，禁止R1—R11、"
             "R1-R5等范围编号；OPEN项必须给required_action。"
         )
+    if stage == "research":
+        base += (
+            "Account for every input Observation belonging to a CRITICAL or IMPORTANT dataset in at least one atomic Claim. "
+            "A Claim may cite one or more compatible Observations; split compound source text into separate atomic Claims. "
+            "Do not omit a verified Observation merely to shorten the response. "
+        )
     if stage == "strategy":
         base += "recommendation.review_ids只能引用输入02_review_notes.json中实际存在的ID。"
     return base
@@ -187,6 +196,10 @@ def strict_output_instructions(stage: str) -> str:
         )
     if stage == "data":
         base += (
+            "Treat inputs data/planned_requirements.json as the minimum dataset contract: do not remove datasets, lower priorities, "
+            "or reduce entity/period/field minimums. Execute inputs data/search_plan.json as an auditable initial search plan, "
+            "covering every listed CRITICAL cohort entity before broadening the search. Return the complete requirement set. "
+            "Sufficiency will be recomputed locally from canonical Sources and Observations, so never self-declare PASS without evidence. "
             "If repair_context.mode is BOUNDED_CRITICAL_GAP_SEARCH, perform the listed bounded source search now, "
             "using each target's requirement, gaps and recommended_queries. Prefer primary sources, preserve valid prior evidence, "
             "and recompute sufficiency after adding only verifiable observations. Do not return a metadata-only repair. "

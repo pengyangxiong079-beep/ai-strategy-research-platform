@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 import shutil
 
+import pytest
+
 from pipeline_v2.model import load_run_state, save_run_state
 from pipeline_v2.orchestrator import PipelineV2Orchestrator
 from pipeline_v2.revision import RevisionExecutor, plan_revision
@@ -74,6 +76,21 @@ def test_canonical_offline_e2e_uses_only_structured_artifacts(tmp_path):
     for agent in registry.agents.values():
         for call in agent.calls:
             assert all(not key.endswith(".md") for key in call["inputs"])
+
+
+def test_parse_envelope_recovers_only_a_missing_final_root_brace():
+    raw = json.dumps(make_envelope(
+        run_id="run", revision_id="rev_001", stage="data", attempt=1,
+        artifacts={
+            "requirements": {"datasets": []}, "source_registry": {"sources": []},
+            "observations": {"observations": []}, "sufficiency": {"datasets": []},
+        }, agent_role="Data Agent",
+    ), ensure_ascii=False)
+    parsed = parse_envelope(raw[:-1], stage="data", attempt=1, run_id="run", revision_id="rev_001")
+    assert parsed["artifacts"]["observations"] == {"observations": []}
+    assert "trailing_root_brace" in parsed["metadata"]["normalized_fields"]
+    with pytest.raises(AgentOutputError):
+        parse_envelope(raw[:-2], stage="data", attempt=1, run_id="run", revision_id="rev_001")
 
 
 def test_strict_v2_rejects_legacy_markdown_without_persisting_success(tmp_path):
@@ -468,6 +485,36 @@ def test_continue_strategy_completes_and_activates_recovered_revision(tmp_path, 
     assert continuation_registry.call_count("fact_check") == 0
     assert load_run_state(folder)["active_revision_id"] == revision_id
     assert load_run_state(revision)["overall_status"] == "COMPLETED"
+
+
+def test_continue_strategy_builds_quality_before_dashboard(tmp_path, monkeypatch):
+    from ui.actions import continue_strategy
+
+    scope = json.loads(FIXTURE.read_text(encoding="utf-8")); folder = tmp_path / "ordered"; folder.mkdir()
+    (folder / "00_analysis_scope.json").write_text(json.dumps(scope), encoding="utf-8")
+    PipelineV2Service(tmp_path).initialize(folder, "ordered", scope)
+    registry = FakeAgentRegistry()
+    PipelineV2Orchestrator(registry).execute(
+        folder, stages=["scope", "data", "research", "review", "fact_check"],
+    )
+    state = load_run_state(folder)
+    state["overall_status"] = "AWAITING_HUMAN_REVIEW"
+    state["stages"]["human"]["status"] = "AWAITING_USER"
+    save_run_state(folder, state)
+    (folder / "human/feedback.json").write_text(
+        json.dumps({"schema_version": "2.0", "feedback": []}), encoding="utf-8",
+    )
+    monkeypatch.setattr("ui.actions.create_ready_agent_registry", lambda: registry)
+
+    result = continue_strategy({**state, "folder": str(folder), "read_only": False})
+
+    assert result["overall_status"] == "COMPLETED"
+    events = [row["stage"] for row in result["events"] if row.get("event") == "STAGE_STARTED"]
+    assert events.index("quality") < events.index("dashboard")
+    dashboard = json.loads((folder / "dashboard/dashboard_data.json").read_text(encoding="utf-8"))
+    assert dashboard["quality_status"] != "PENDING"
+    assert dashboard["quality"]["overall_status"] != "PENDING"
+    assert Path(result["dashboard_html"]).is_file()
 
 
 def test_continue_strategy_refuses_unpassed_fact_check_before_agent_creation(tmp_path, monkeypatch):

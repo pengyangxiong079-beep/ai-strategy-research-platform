@@ -133,6 +133,40 @@ def test_decision_view_exposes_issue_evidence_and_required_action():
         assert decision["severity"] == "MEDIUM"
 
 
+def test_gap_queries_survive_live_candidate_denormalization():
+    with tempfile.TemporaryDirectory() as temp:
+        run = _fixture(Path(temp))
+        folder = Path(run["folder"])
+        sufficiency = {
+            "datasets": [{
+                "dataset_id": "competitors", "priority": "IMPORTANT", "status": "INSUFFICIENT",
+                "gaps": [{
+                    "gap_id": "G_competitors_001", "missing_field": "dataset",
+                    "recommended_queries": [{"query": "Example competitor annual report"}],
+                }],
+            }],
+            # Mirrors the incomplete denormalized list observed in a live run.
+            "gap_search_candidates": [{
+                "gap_id": "G_competitors_001", "dataset_id": "competitors",
+                "priority": "IMPORTANT", "missing_field": "dataset",
+            }],
+        }
+        (folder / "data/sufficiency.json").write_text(json.dumps(sufficiency), encoding="utf-8")
+        (folder / "review/review_issues.json").write_text(json.dumps({"issues": [{
+            "review_id": "R1", "severity": "MEDIUM", "category": "sufficiency",
+            "issue": "Competitor evidence is insufficient.",
+            "evidence": "G_competitors_001 for dataset_id competitors is INSUFFICIENT.",
+            "required_action": "Add supported competitor evidence.", "status": "OPEN",
+        }]}), encoding="utf-8")
+
+        gap_search = quality_view_model(run)["targeted_gap_search"]
+        assert gap_search["query_count"] == 1
+        assert gap_search["targets"][0]["recommended_queries"][0]["query"] == "Example competitor annual report"
+        decision = decisions_view_model(run)["pending"][0]
+        assert "具体缺口数据集：competitors" in decision["evidence"]
+        assert "建议定向查询：Example competitor annual report" in decision["required_action"]
+
+
 def test_repeated_identical_deferred_decision_is_idempotent():
     with tempfile.TemporaryDirectory() as temp:
         run = _fixture(Path(temp))

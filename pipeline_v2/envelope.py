@@ -126,6 +126,7 @@ def make_envelope(*, run_id: str, revision_id: str, stage: str, attempt: int,
 
 def parse_envelope(raw: Any, *, stage: str, attempt: int, run_id: str,
                    revision_id: str) -> dict:
+    recovered_trailing_brace = False
     if isinstance(raw, dict):
         payload = raw
         excerpt = json.dumps(raw, ensure_ascii=False)[:500]
@@ -133,7 +134,26 @@ def parse_envelope(raw: Any, *, stage: str, attempt: int, run_id: str,
         excerpt = raw.strip()[:500]
         try:
             payload = json.loads(raw)
-        except (json.JSONDecodeError, TypeError) as error:
+        except json.JSONDecodeError as error:
+            # Long structured responses can occasionally lose only the final
+            # root-object brace at the transport boundary. Appending exactly
+            # one brace is lossless and accepted only when it yields a complete
+            # JSON object; every other syntax defect remains a strict retry.
+            payload = None
+            if error.pos >= len(raw.rstrip()):
+                try:
+                    candidate = json.loads(raw.rstrip() + "}")
+                    if isinstance(candidate, dict):
+                        payload = candidate
+                        recovered_trailing_brace = True
+                except (json.JSONDecodeError, TypeError):
+                    payload = None
+            if payload is not None:
+                pass
+            else:
+                code = "AGENT_OUTPUT_NOT_STRUCTURED" if raw.lstrip().startswith(("#", "```")) else "AGENT_OUTPUT_SCHEMA_INVALID"
+                raise AgentOutputError(code, stage, attempt, excerpt, [str(error)], list(EXPECTED_ARTIFACTS.get(stage, ()))) from None
+        except TypeError as error:
             code = "AGENT_OUTPUT_NOT_STRUCTURED" if raw.lstrip().startswith(("#", "```")) else "AGENT_OUTPUT_SCHEMA_INVALID"
             raise AgentOutputError(code, stage, attempt, excerpt, [str(error)], list(EXPECTED_ARTIFACTS.get(stage, ()))) from None
     else:
@@ -177,6 +197,10 @@ def parse_envelope(raw: Any, *, stage: str, attempt: int, run_id: str,
             if normalized_fields:
                 metadata["normalized_by"] = "PipelineV2Orchestrator"
                 metadata["normalized_fields"] = normalized_fields
+            if recovered_trailing_brace:
+                metadata["normalized_by"] = "PipelineV2Orchestrator"
+                recovered = list(metadata.get("normalized_fields") or [])
+                metadata["normalized_fields"] = list(dict.fromkeys([*recovered, "trailing_root_brace"]))
     if errors:
         raise AgentOutputError("AGENT_OUTPUT_SCHEMA_INVALID", stage, attempt, excerpt, errors, list(EXPECTED_ARTIFACTS.get(stage, ())))
 

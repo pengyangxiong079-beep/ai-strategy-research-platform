@@ -28,8 +28,28 @@ def quality_view_model(run):
         row.get("dataset_id"): row.get("status")
         for row in sufficiency.get("datasets", []) if isinstance(row, dict)
     }
+    # Some live Data responses correctly include queries on datasets[].gaps but
+    # omit them from the denormalized gap_search_candidates list.  Rejoin the
+    # canonical gap details here so the confirmation UI and revision request do
+    # not degrade into an opaque list of dataset names.
+    gap_details = {}
+    for dataset in sufficiency.get("datasets", []):
+        if not isinstance(dataset, dict):
+            continue
+        for gap in dataset.get("gaps") or []:
+            if not isinstance(gap, dict):
+                continue
+            key = (gap.get("gap_id"), dataset.get("dataset_id"))
+            gap_details[key] = {
+                **gap,
+                "dataset_id": dataset.get("dataset_id"),
+                "priority": dataset.get("priority"),
+            }
+    raw_candidates = list(sufficiency.get("gap_search_candidates") or [])
+    if not raw_candidates:
+        raw_candidates = list(gap_details.values())
     candidates, seen = [], set()
-    for raw in sufficiency.get("gap_search_candidates", []):
+    for raw in raw_candidates:
         if not isinstance(raw, dict) or raw.get("priority") not in {"CRITICAL", "IMPORTANT"}:
             continue
         if dataset_status.get(raw.get("dataset_id")) == "PASS":
@@ -38,7 +58,7 @@ def quality_view_model(run):
         if identity in seen:
             continue
         seen.add(identity)
-        candidates.append(raw)
+        candidates.append({**gap_details.get(identity, {}), **raw})
     base = Path(run.get("base_folder") or run["folder"])
     historical_attempts = sum(
         1 for marker_path in (base / "revisions").glob("rev_*/data/targeted_gap_search.json")

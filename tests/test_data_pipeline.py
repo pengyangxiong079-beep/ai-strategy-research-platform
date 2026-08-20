@@ -109,6 +109,60 @@ class DataPipelineTests(unittest.TestCase):
         self.assertIn("KBA Neuzulassungen", query_text)
         self.assertIn("XPeng Deutschland Preise", query_text)
 
+    def test_deep_competitor_plan_covers_required_cohort_with_unique_query_ids(self):
+        scope = {
+            "analysis_type": "竞品分析", "analysis_type_id": "COMPETITOR_ANALYSIS",
+            "topic": "Alpha Cloud与主要竞品分析", "target_entity": "Alpha Cloud",
+            "industry": "software SaaS", "geography": "全球", "analysis_date": "2026-08-20",
+            "depth": "深度版", "competitors": ["Beta Cloud", "Gamma Cloud", "Delta Cloud"],
+        }
+        plan = build_search_plan(scope, build_requirements(scope))
+        critical = [row for row in plan["coverage_targets"] if row["priority"] == "CRITICAL"]
+        self.assertTrue(critical)
+        self.assertTrue(all(row["expected_entities"] == ["Alpha Cloud", "Beta Cloud", "Gamma Cloud"] for row in critical))
+        self.assertTrue(all(row["coverage_complete"] for row in critical))
+        query_ids = [row["query_id"] for row in plan["queries"]]
+        self.assertEqual(len(query_ids), len(set(query_ids)))
+
+    def test_competitor_sufficiency_uses_required_cohort_not_every_extra_peer(self):
+        scope = {
+            "analysis_type": "COMPETITOR_ANALYSIS", "topic": "Alpha竞品分析",
+            "target_entity": "Alpha", "competitors": ["Beta", "Gamma", "Delta"],
+        }
+        requirements = {"analysis_type": "COMPETITOR_ANALYSIS", "datasets": [{
+            "dataset_id": "competitor_profiles", "priority": "CRITICAL",
+            "required_fields": ["entity", "metric", "text_value", "source_id"],
+            "minimum_entities": 3, "minimum_observations_per_entity": 1,
+            "minimum_periods": 0, "required_comparability_fields": [],
+            "dashboard_components": [],
+        }]}
+        source = {"source_id": "S1", "source_grade": "GRADE_A"}
+        observations = [{
+            "observation_id": f"O{index}", "dataset_id": "competitor_profiles",
+            "entity": entity, "metric": "business_scope", "text_value": "verified profile",
+            "source_id": "S1", "verification_status": "SUPPORTED",
+        } for index, entity in enumerate(("Alpha Inc", "Beta", "Gamma"), 1)]
+        result = evaluate_sufficiency(requirements, observations, [source], scope)
+        dataset = result["datasets"][0]
+        self.assertEqual(dataset["status"], "PASS")
+        self.assertEqual(dataset["expected_entities"], ["Alpha", "Beta", "Gamma"])
+        self.assertEqual(dataset["missing_entities"], [])
+
+    def test_empty_dataset_gap_ids_remain_unique_after_entity_gaps(self):
+        scope = {
+            "analysis_type": "COMPETITOR_ANALYSIS", "target_entity": "Alpha",
+            "competitors": ["Beta", "Gamma"],
+        }
+        requirements = {"analysis_type": "COMPETITOR_ANALYSIS", "datasets": [{
+            "dataset_id": "competitor_profiles", "priority": "CRITICAL",
+            "required_fields": ["entity", "source_id"], "minimum_entities": 3,
+            "minimum_observations_per_entity": 1, "minimum_periods": 0,
+            "required_comparability_fields": [], "dashboard_components": [],
+        }]}
+        dataset = evaluate_sufficiency(requirements, [], [], scope)["datasets"][0]
+        gap_ids = [row["gap_id"] for row in dataset["gaps"]]
+        self.assertEqual(len(gap_ids), len(set(gap_ids)))
+
     def test_scope_topic_routes_auto_detected_food_beverage_queries(self):
         scope = {
             "analysis_type": "行业分析", "topic": "中国咖啡及茶饮行业",

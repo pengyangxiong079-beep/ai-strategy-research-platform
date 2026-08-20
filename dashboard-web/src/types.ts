@@ -237,6 +237,16 @@ export interface DashboardData {
   scenarios?: Scenario[];
   observations?: Observation[];
   data_coverage?: DataCoverage;
+  component_availability?: Record<string, {
+    status: "AVAILABLE" | "PARTIAL" | "UNAVAILABLE" | "NOT_APPLICABLE";
+    reason_code?: string;
+    reason: string;
+    observed_count?: number;
+    exported_count?: number;
+    gap_ids?: string[];
+    search_stop_reason?: string;
+    required_action?: string;
+  }>;
   evidence?: Array<Record<string, unknown>>;
   quality?: {
     overall_status?: string;
